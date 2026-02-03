@@ -1,0 +1,29 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Clippy.SubtitleOverlayWindow"
+        Title="Subtitles"
+        Width="800" Height="120"
+        Topmost="True"
+        SystemDecorations="None"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="Manual">
+
+    <Border Background="#CC000000"
+            CornerRadius="12"
+            Padding="24,12"
+            Margin="8">
+        <TextBlock x:Name="SubtitleText"
+                   Text="Listening..."
+                   FontSize="22"
+                   FontWeight="SemiBold"
+                   Foreground="White"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"
+                   VerticalAlignment="Center"
+                   HorizontalAlignment="Center"
+                   MaxWidth="750" />
+    </Border>
+</Window>

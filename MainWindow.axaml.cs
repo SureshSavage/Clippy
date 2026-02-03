@@ -24,6 +24,10 @@ public partial class MainWindow : Window
     private string? _currentRecordingPath;
     private bool _isRecording;
 
+    private SubtitleOverlayWindow? _subtitleOverlay;
+    private LiveTranscriptionService? _liveTranscription;
+    private bool _isSubtitling;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -179,6 +183,73 @@ public partial class MainWindow : Window
         }
 
         return result.ToString().Trim();
+    }
+
+    private async void OnSubtitleClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_isSubtitling)
+        {
+            await StopSubtitling();
+        }
+        else
+        {
+            StartSubtitling();
+        }
+    }
+
+    private void StartSubtitling()
+    {
+        if (!File.Exists(ModelPath))
+        {
+            SetStatus("Whisper model not found. Downloading may still be in progress...");
+            return;
+        }
+
+        _subtitleOverlay = new SubtitleOverlayWindow();
+        _subtitleOverlay.Show();
+        _subtitleOverlay.PositionAtBottomCenter();
+
+        _liveTranscription = new LiveTranscriptionService(
+            ModelPath,
+            text => _subtitleOverlay.UpdateSubtitle(text),
+            chunkIntervalMs: 3000
+        );
+
+        try
+        {
+            _liveTranscription.Start();
+            _isSubtitling = true;
+            SubtitleButton.Content = "Stop Subtitle";
+            SetStatus("Live subtitling active...");
+        }
+        catch (Exception ex)
+        {
+            _subtitleOverlay.Close();
+            _subtitleOverlay = null;
+            _liveTranscription?.Dispose();
+            _liveTranscription = null;
+            SetStatus($"Failed to start subtitling: {ex.Message}");
+        }
+    }
+
+    private async Task StopSubtitling()
+    {
+        SubtitleButton.IsEnabled = false;
+
+        if (_liveTranscription != null)
+        {
+            await _liveTranscription.StopAsync();
+            _liveTranscription.Dispose();
+            _liveTranscription = null;
+        }
+
+        _subtitleOverlay?.Close();
+        _subtitleOverlay = null;
+
+        _isSubtitling = false;
+        SubtitleButton.Content = "Listen+Subtitle";
+        SubtitleButton.IsEnabled = true;
+        SetStatus("Subtitling stopped.");
     }
 
     private void SetStatus(string message)

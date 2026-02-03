@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Clippy.MainWindow"
         Title="Clippy"
-        Width="450" Height="350"
+        Width="600" Height="350"
         WindowStartupLocation="CenterScreen">
 
     <StackPanel VerticalAlignment="Center"
@@ -35,6 +35,12 @@
                     Padding="20,10"
                     FontSize="16"
                     Click="OnListenClicked" />
+
+            <Button x:Name="SubtitleButton"
+                    Content="Listen+Subtitle"
+                    Padding="20,10"
+                    FontSize="16"
+                    Click="OnSubtitleClicked" />
 
             <Button Content="Hide to Menu Bar"
                     Padding="20,10"
