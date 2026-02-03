@@ -215,7 +215,7 @@ public partial class MainWindow : Window
         _answerOverlay.Show();
         _answerOverlay.PositionBelowSubtitle(_subtitleOverlay);
 
-        _ollamaService = new OllamaService("qwen3:4b");
+        _ollamaService = new OllamaService("qwen3-4b-thinking");
 
         _liveTranscription = new LiveTranscriptionService(
             ModelPath,

@@ -13,7 +13,7 @@ public class OllamaService : IDisposable
     private readonly string _baseUrl;
     private CancellationTokenSource? _currentRequest;
 
-    public OllamaService(string model = "qwen3:4b", string baseUrl = "http://localhost:11434")
+    public OllamaService(string model = "qwen3-4b-thinking", string baseUrl = "http://localhost:2276")
     {
         _model = model;
         _baseUrl = baseUrl;
@@ -22,7 +22,6 @@ public class OllamaService : IDisposable
 
     public async Task<string> AskAsync(string question, CancellationToken ct = default)
     {
-        // Cancel any previous in-flight request
         _currentRequest?.Cancel();
         _currentRequest = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var token = _currentRequest.Token;
@@ -30,22 +29,32 @@ public class OllamaService : IDisposable
         var requestBody = new
         {
             model = _model,
-            prompt = $"Answer this question concisely in 1-2 sentences:\n\n{question}",
+            messages = new[]
+            {
+                new { role = "user", content = $"Answer this question concisely in 1-2 sentences:\n\n{question}" }
+            },
             stream = false
         };
 
         var json = JsonSerializer.Serialize(requestBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        var response = await _httpClient.PostAsync($"{_baseUrl}/api/generate", content, token);
+        var response = await _httpClient.PostAsync($"{_baseUrl}/v1/chat/completions", content, token);
         response.EnsureSuccessStatusCode();
 
         var responseJson = await response.Content.ReadAsStringAsync(token);
         using var doc = JsonDocument.Parse(responseJson);
 
-        if (doc.RootElement.TryGetProperty("response", out var responseText))
+        // OpenAI format: { "choices": [{ "message": { "content": "..." } }] }
+        if (doc.RootElement.TryGetProperty("choices", out var choices)
+            && choices.GetArrayLength() > 0)
         {
-            return responseText.GetString()?.Trim() ?? "";
+            var firstChoice = choices[0];
+            if (firstChoice.TryGetProperty("message", out var message)
+                && message.TryGetProperty("content", out var contentText))
+            {
+                return contentText.GetString()?.Trim() ?? "";
+            }
         }
 
         return "";
