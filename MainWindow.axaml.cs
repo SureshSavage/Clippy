@@ -278,7 +278,7 @@ public partial class MainWindow : Window
             ModelPath,
             text => _subtitleOverlay.UpdateSubtitle(text),
             onQuestionDetected: OnQuestionDetected,
-            chunkIntervalMs: 3000
+            chunkIntervalMs: 1500
         );
 
         try

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,7 +11,7 @@ namespace Clippy;
 
 public class LiveTranscriptionService : IDisposable
 {
-    private static readonly string[] QuestionWords =
+    private static readonly HashSet<string> QuestionWords = new(StringComparer.OrdinalIgnoreCase)
         { "what", "why", "how", "when", "where", "who", "which",
           "is", "are", "do", "does", "can", "could", "would",
           "should", "will", "shall", "has", "have", "did", "was", "were" };
@@ -34,7 +35,7 @@ public class LiveTranscriptionService : IDisposable
         string modelPath,
         Action<string> onTextUpdated,
         Action<string>? onQuestionDetected = null,
-        int chunkIntervalMs = 3000)
+        int chunkIntervalMs = 1500)
     {
         _modelPath = modelPath;
         _onTextUpdated = onTextUpdated;
@@ -52,12 +53,17 @@ public class LiveTranscriptionService : IDisposable
         _factory = WhisperFactory.FromPath(_modelPath);
         _processor = _factory.CreateBuilder()
             .WithLanguage("en")
+            .WithThreads(Math.Max(1, Environment.ProcessorCount / 2))
+            .WithNoContext()
+            .WithSingleSegment()
+            .WithGreedySamplingStrategy()
+            .ParentBuilder
             .Build();
 
         _ffmpegProcess = Process.Start(new ProcessStartInfo
         {
             FileName = "ffmpeg",
-            Arguments = "-f avfoundation -i \":default\" -ar 16000 -ac 1 -f s16le -acodec pcm_s16le pipe:1",
+            Arguments = "-f avfoundation -i \":default\" -ar 16000 -ac 1 -f s16le -acodec pcm_s16le -probesize 32 -analyzeduration 0 pipe:1",
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
@@ -128,13 +134,33 @@ public class LiveTranscriptionService : IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
-            dataAvailable.WaitOne(TimeSpan.FromMilliseconds(500));
+            dataAvailable.WaitOne(TimeSpan.FromMilliseconds(100));
 
             float[]? samples = null;
             lock (queueLock)
             {
-                if (pcmQueue.Count > 0)
+                if (pcmQueue.Count == 0) continue;
+
+                // Drain the queue: merge all pending chunks to avoid falling behind
+                if (pcmQueue.Count == 1)
+                {
                     samples = pcmQueue.Dequeue();
+                }
+                else
+                {
+                    var totalLength = 0;
+                    foreach (var chunk in pcmQueue)
+                        totalLength += chunk.Length;
+
+                    samples = new float[totalLength];
+                    var offset = 0;
+                    while (pcmQueue.Count > 0)
+                    {
+                        var chunk = pcmQueue.Dequeue();
+                        Array.Copy(chunk, 0, samples, offset, chunk.Length);
+                        offset += chunk.Length;
+                    }
+                }
             }
 
             if (samples == null || _processor == null) continue;
@@ -207,8 +233,8 @@ public class LiveTranscriptionService : IDisposable
         if (trimmed.Contains('?'))
             return true;
 
-        var firstWord = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault()?.ToLowerInvariant();
+        var firstWord = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault();
 
         return firstWord != null && QuestionWords.Contains(firstWord);
     }
