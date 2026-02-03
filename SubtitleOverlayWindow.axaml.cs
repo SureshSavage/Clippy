@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Threading;
 
 namespace Clippy;
@@ -8,6 +9,15 @@ public partial class SubtitleOverlayWindow : Window
     public SubtitleOverlayWindow()
     {
         InitializeComponent();
+        PointerPressed += OnPointerPressed;
+    }
+
+    private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            BeginMoveDrag(e);
+        }
     }
 
     public void PositionAtBottomCenter()

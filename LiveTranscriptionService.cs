@@ -10,8 +10,14 @@ namespace Clippy;
 
 public class LiveTranscriptionService : IDisposable
 {
+    private static readonly string[] QuestionWords =
+        { "what", "why", "how", "when", "where", "who", "which",
+          "is", "are", "do", "does", "can", "could", "would",
+          "should", "will", "shall", "has", "have", "did", "was", "were" };
+
     private readonly string _modelPath;
     private readonly Action<string> _onTextUpdated;
+    private readonly Action<string>? _onQuestionDetected;
     private readonly int _chunkIntervalMs;
 
     private WhisperFactory? _factory;
@@ -27,10 +33,12 @@ public class LiveTranscriptionService : IDisposable
     public LiveTranscriptionService(
         string modelPath,
         Action<string> onTextUpdated,
+        Action<string>? onQuestionDetected = null,
         int chunkIntervalMs = 3000)
     {
         _modelPath = modelPath;
         _onTextUpdated = onTextUpdated;
+        _onQuestionDetected = onQuestionDetected;
         _chunkIntervalMs = chunkIntervalMs;
     }
 
@@ -149,6 +157,11 @@ public class LiveTranscriptionService : IDisposable
 
                     var displayText = string.Join("\n", _recentLines);
                     _onTextUpdated(displayText);
+
+                    if (_onQuestionDetected != null && IsQuestion(text))
+                    {
+                        _onQuestionDetected(text);
+                    }
                 }
             }
             catch (OperationCanceledException) { break; }
@@ -186,6 +199,18 @@ public class LiveTranscriptionService : IDisposable
             try { await _readTask; } catch { }
         if (_transcribeTask != null)
             try { await _transcribeTask; } catch { }
+    }
+
+    private static bool IsQuestion(string text)
+    {
+        var trimmed = text.Trim();
+        if (trimmed.Contains('?'))
+            return true;
+
+        var firstWord = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault()?.ToLowerInvariant();
+
+        return firstWord != null && QuestionWords.Contains(firstWord);
     }
 
     public void Dispose()

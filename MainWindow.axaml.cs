@@ -25,7 +25,9 @@ public partial class MainWindow : Window
     private bool _isRecording;
 
     private SubtitleOverlayWindow? _subtitleOverlay;
+    private AnswerOverlayWindow? _answerOverlay;
     private LiveTranscriptionService? _liveTranscription;
+    private OllamaService? _ollamaService;
     private bool _isSubtitling;
 
     public MainWindow()
@@ -209,9 +211,16 @@ public partial class MainWindow : Window
         _subtitleOverlay.Show();
         _subtitleOverlay.PositionAtBottomCenter();
 
+        _answerOverlay = new AnswerOverlayWindow();
+        _answerOverlay.Show();
+        _answerOverlay.PositionBelowSubtitle(_subtitleOverlay);
+
+        _ollamaService = new OllamaService("qwen3:4b");
+
         _liveTranscription = new LiveTranscriptionService(
             ModelPath,
             text => _subtitleOverlay.UpdateSubtitle(text),
+            onQuestionDetected: OnQuestionDetected,
             chunkIntervalMs: 3000
         );
 
@@ -226,8 +235,12 @@ public partial class MainWindow : Window
         {
             _subtitleOverlay.Close();
             _subtitleOverlay = null;
+            _answerOverlay?.Close();
+            _answerOverlay = null;
             _liveTranscription?.Dispose();
             _liveTranscription = null;
+            _ollamaService?.Dispose();
+            _ollamaService = null;
             SetStatus($"Failed to start subtitling: {ex.Message}");
         }
     }
@@ -246,10 +259,43 @@ public partial class MainWindow : Window
         _subtitleOverlay?.Close();
         _subtitleOverlay = null;
 
+        _answerOverlay?.Close();
+        _answerOverlay = null;
+
+        _ollamaService?.Dispose();
+        _ollamaService = null;
+
         _isSubtitling = false;
         SubtitleButton.Content = "Listen+Subtitle";
         SubtitleButton.IsEnabled = true;
         SetStatus("Subtitling stopped.");
+    }
+
+    private void OnQuestionDetected(string question)
+    {
+        _answerOverlay?.UpdateAnswer($"Q: {question}\nThinking...");
+
+        _ = Task.Run(async () =>
+        {
+            if (_ollamaService == null) return;
+
+            try
+            {
+                var answer = await _ollamaService.AskAsync(question);
+                if (!string.IsNullOrWhiteSpace(answer))
+                {
+                    _answerOverlay?.UpdateAnswer($"Q: {question}\nA: {answer}");
+                }
+                else
+                {
+                    _answerOverlay?.UpdateAnswer($"Q: {question}\nNo answer received.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _answerOverlay?.UpdateAnswer($"Q: {question}\nError: {ex.Message}");
+            }
+        });
     }
 
     private void SetStatus(string message)
