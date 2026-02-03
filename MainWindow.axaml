@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Clippy.MainWindow"
+        Title="Clippy"
+        Width="400" Height="300"
+        WindowStartupLocation="CenterScreen">
+
+    <StackPanel VerticalAlignment="Center"
+                HorizontalAlignment="Center"
+                Spacing="20">
+
+        <TextBlock Text="Clippy"
+                   FontSize="28"
+                   FontWeight="Bold"
+                   HorizontalAlignment="Center" />
+
+        <TextBlock Text="Click the button to hide this window to the menu bar."
+                   FontSize="14"
+                   HorizontalAlignment="Center"
+                   TextWrapping="Wrap"
+                   MaxWidth="300"
+                   TextAlignment="Center" />
+
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Center"
+                    Spacing="12">
+
+            <Button Content="Clip-it"
+                    Padding="20,10"
+                    FontSize="16"
+                    Click="OnClipItClicked" />
+
+            <Button Content="Hide to Menu Bar"
+                    Padding="20,10"
+                    FontSize="16"
+                    Click="OnHideClicked" />
+
+        </StackPanel>
+
+    </StackPanel>
+</Window>
