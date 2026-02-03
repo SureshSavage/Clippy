@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Clippy.MainWindow"
         Title="Clippy"
-        Width="400" Height="300"
+        Width="450" Height="350"
         WindowStartupLocation="CenterScreen">
 
     <StackPanel VerticalAlignment="Center"
@@ -30,12 +30,27 @@
                     FontSize="16"
                     Click="OnClipItClicked" />
 
+            <Button x:Name="ListenButton"
+                    Content="Listen"
+                    Padding="20,10"
+                    FontSize="16"
+                    Click="OnListenClicked" />
+
             <Button Content="Hide to Menu Bar"
                     Padding="20,10"
                     FontSize="16"
                     Click="OnHideClicked" />
 
         </StackPanel>
+
+        <TextBlock x:Name="StatusText"
+                   Text=""
+                   FontSize="13"
+                   HorizontalAlignment="Center"
+                   TextWrapping="Wrap"
+                   MaxWidth="380"
+                   TextAlignment="Center"
+                   Foreground="Gray" />
 
     </StackPanel>
 </Window>

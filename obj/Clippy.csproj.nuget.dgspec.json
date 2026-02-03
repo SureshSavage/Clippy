@@ -56,6 +56,14 @@
             "Avalonia.Themes.Fluent": {
               "target": "Package",
               "version": "[11.3.11, )"
+            },
+            "Whisper.net": {
+              "target": "Package",
+              "version": "[1.9.0, )"
+            },
+            "Whisper.net.Runtime": {
+              "target": "Package",
+              "version": "[1.9.0, )"
             }
           },
           "imports": [

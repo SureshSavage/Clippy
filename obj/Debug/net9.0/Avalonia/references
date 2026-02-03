@@ -21,6 +21,7 @@
 /Users/sugunasavage/.nuget/packages/harfbuzzsharp/8.3.1.1/lib/net8.0/HarfBuzzSharp.dll
 /Users/sugunasavage/.nuget/packages/microcom.runtime/0.11.0/lib/net5.0/MicroCom.Runtime.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/Microsoft.CSharp.dll
+/Users/sugunasavage/.nuget/packages/microsoft.extensions.ai.abstractions/10.0.0/lib/net9.0/Microsoft.Extensions.AI.Abstractions.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/Microsoft.VisualBasic.Core.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/Microsoft.VisualBasic.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/Microsoft.Win32.Primitives.dll
@@ -78,7 +79,7 @@
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.IO.FileSystem.Watcher.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.IO.IsolatedStorage.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.IO.MemoryMappedFiles.dll
-/usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.IO.Pipelines.dll
+/Users/sugunasavage/.nuget/packages/system.io.pipelines/10.0.0/lib/net9.0/System.IO.Pipelines.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.IO.Pipes.AccessControl.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.IO.Pipes.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.IO.UnmanagedMemoryStream.dll
@@ -156,8 +157,8 @@
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.Text.Encoding.CodePages.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.Text.Encoding.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.Text.Encoding.Extensions.dll
-/usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.Text.Encodings.Web.dll
-/usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.Text.Json.dll
+/Users/sugunasavage/.nuget/packages/system.text.encodings.web/10.0.0/lib/net9.0/System.Text.Encodings.Web.dll
+/Users/sugunasavage/.nuget/packages/system.text.json/10.0.0/lib/net9.0/System.Text.Json.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.Text.RegularExpressions.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.Threading.Channels.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.Threading.dll
@@ -185,4 +186,5 @@
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.Xml.XPath.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/System.Xml.XPath.XDocument.dll
 /Users/sugunasavage/.nuget/packages/tmds.dbus.protocol/0.21.2/lib/net8.0/Tmds.DBus.Protocol.dll
+/Users/sugunasavage/.nuget/packages/whisper.net/1.9.0/lib/net9.0/Whisper.net.dll
 /usr/local/share/dotnet/packs/Microsoft.NETCore.App.Ref/9.0.12/ref/net9.0/WindowsBase.dll

@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
+using Whisper.net;
 
 namespace Clippy;
 
@@ -11,6 +13,16 @@ public partial class MainWindow : Window
 
     private static readonly string ScreenshotDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Clippy_Screenshots");
+
+    private static readonly string OutputDir =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Clippy_Transcripts");
+
+    private static readonly string ModelPath =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".clippy", "models", "ggml-base.en.bin");
+
+    private Process? _ffmpegProcess;
+    private string? _currentRecordingPath;
+    private bool _isRecording;
 
     public MainWindow()
     {
@@ -24,17 +36,13 @@ public partial class MainWindow : Window
 
     private async void OnClipItClicked(object? sender, RoutedEventArgs e)
     {
-        // Hide the window so it doesn't appear in the screenshot
         Hide();
-
-        // Brief delay to let the window fully disappear
         await Task.Delay(300);
 
         Directory.CreateDirectory(ScreenshotDir);
         var fileName = $"clip_{DateTime.Now:yyyyMMdd_HHmmss}.png";
         var filePath = Path.Combine(ScreenshotDir, fileName);
 
-        // macOS screencapture: -x = no sound
         var process = Process.Start(new ProcessStartInfo
         {
             FileName = "screencapture",
@@ -46,8 +54,135 @@ public partial class MainWindow : Window
         if (process != null)
             await process.WaitForExitAsync();
 
-        // Show the window again
         Show();
         Activate();
+    }
+
+    private async void OnListenClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_isRecording)
+        {
+            await StopRecordingAndTranscribe();
+        }
+        else
+        {
+            StartRecording();
+        }
+    }
+
+    private void StartRecording()
+    {
+        if (!File.Exists(ModelPath))
+        {
+            SetStatus("Whisper model not found. Downloading may still be in progress...");
+            return;
+        }
+
+        Directory.CreateDirectory(OutputDir);
+        _currentRecordingPath = Path.Combine(OutputDir, $"recording_{DateTime.Now:yyyyMMdd_HHmmss}.wav");
+
+        // Record from default microphone using ffmpeg
+        // -f avfoundation -i ":default" captures default audio input
+        // -ar 16000 -ac 1 = 16kHz mono (required by Whisper)
+        // -y = overwrite output
+        _ffmpegProcess = Process.Start(new ProcessStartInfo
+        {
+            FileName = "ffmpeg",
+            Arguments = $"-f avfoundation -i \":default\" -ar 16000 -ac 1 -y \"{_currentRecordingPath}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true
+        });
+
+        if (_ffmpegProcess != null)
+        {
+            _isRecording = true;
+            ListenButton.Content = "Stop";
+            SetStatus("Recording... Click Stop when done.");
+        }
+    }
+
+    private async Task StopRecordingAndTranscribe()
+    {
+        ListenButton.IsEnabled = false;
+
+        // Send 'q' to ffmpeg to stop gracefully
+        if (_ffmpegProcess != null && !_ffmpegProcess.HasExited)
+        {
+            // Kill the process (ffmpeg stops on SIGINT/SIGTERM)
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "kill",
+                    Arguments = $"-INT {_ffmpegProcess.Id}",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                });
+                await _ffmpegProcess.WaitForExitAsync();
+            }
+            catch
+            {
+                try { _ffmpegProcess.Kill(); } catch { }
+            }
+        }
+
+        _isRecording = false;
+        _ffmpegProcess = null;
+        ListenButton.Content = "Listen";
+
+        if (_currentRecordingPath == null || !File.Exists(_currentRecordingPath))
+        {
+            SetStatus("Recording failed.");
+            ListenButton.IsEnabled = true;
+            return;
+        }
+
+        SetStatus("Transcribing audio...");
+
+        var recordingPath = _currentRecordingPath;
+        var transcriptPath = Path.ChangeExtension(recordingPath, ".txt");
+
+        try
+        {
+            var text = await Task.Run(() => TranscribeAudio(recordingPath));
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                await File.WriteAllTextAsync(transcriptPath, text);
+                SetStatus($"Saved: {Path.GetFileName(transcriptPath)}");
+            }
+            else
+            {
+                SetStatus("No speech detected in recording.");
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Transcription error: {ex.Message}");
+        }
+
+        ListenButton.IsEnabled = true;
+    }
+
+    private static async Task<string> TranscribeAudio(string wavPath)
+    {
+        using var factory = WhisperFactory.FromPath(ModelPath);
+        using var processor = factory.CreateBuilder().WithLanguage("en").Build();
+
+        using var fileStream = File.OpenRead(wavPath);
+
+        var result = new System.Text.StringBuilder();
+        await foreach (var segment in processor.ProcessAsync(fileStream))
+        {
+            result.Append(segment.Text);
+        }
+
+        return result.ToString().Trim();
+    }
+
+    private void SetStatus(string message)
+    {
+        Dispatcher.UIThread.Post(() => StatusText.Text = message);
     }
 }
