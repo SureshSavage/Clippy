@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -9,15 +10,54 @@ namespace Clippy;
 public class OllamaService : IDisposable
 {
     private readonly HttpClient _httpClient;
-    private readonly string _model;
     private readonly string _baseUrl;
     private CancellationTokenSource? _currentRequest;
 
+    public string CurrentModel { get; set; }
+
     public OllamaService(string model = "qwen3-4b-thinking", string baseUrl = "http://localhost:2276")
     {
-        _model = model;
+        CurrentModel = model;
         _baseUrl = baseUrl;
         _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+    }
+
+    public async Task<List<string>> ListModelsAsync()
+    {
+        var models = new List<string>();
+        var response = await _httpClient.GetAsync($"{_baseUrl}/api/tags");
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        if (doc.RootElement.TryGetProperty("models", out var modelsArray))
+        {
+            foreach (var model in modelsArray.EnumerateArray())
+            {
+                if (model.TryGetProperty("name", out var name))
+                {
+                    var n = name.GetString();
+                    if (!string.IsNullOrEmpty(n))
+                        models.Add(n);
+                }
+            }
+        }
+
+        return models;
+    }
+
+    public async Task<bool> IsConnectedAsync()
+    {
+        try
+        {
+            await ListModelsAsync();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public async Task<string> AskAsync(string question, CancellationToken ct = default)
@@ -28,7 +68,7 @@ public class OllamaService : IDisposable
 
         var requestBody = new
         {
-            model = _model,
+            model = CurrentModel,
             messages = new[]
             {
                 new { role = "user", content = $"Answer this question concisely in 1-2 sentences:\n\n{question}" }

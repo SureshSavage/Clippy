@@ -1,7 +1,9 @@
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Whisper.net;
 
@@ -30,9 +32,64 @@ public partial class MainWindow : Window
     private OllamaService? _ollamaService;
     private bool _isSubtitling;
 
+    private OllamaService _ollamaManager = new();
+    private string _selectedModel = "qwen3-4b-thinking";
+
     public MainWindow()
     {
         InitializeComponent();
+        Opened += async (_, _) => await LoadModelsAsync();
+    }
+
+    private async Task LoadModelsAsync()
+    {
+        ConnectionDot.Background = new SolidColorBrush(Colors.Gray);
+        ConnectionLabel.Text = "Checking...";
+        RefreshButton.IsEnabled = false;
+
+        try
+        {
+            var models = await _ollamaManager.ListModelsAsync();
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                ConnectionDot.Background = new SolidColorBrush(Colors.LimeGreen);
+                ConnectionLabel.Text = "Connected";
+
+                ModelDropdown.ItemsSource = models;
+
+                if (models.Count > 0)
+                {
+                    var idx = models.IndexOf(_selectedModel);
+                    ModelDropdown.SelectedIndex = idx >= 0 ? idx : 0;
+                }
+
+                RefreshButton.IsEnabled = true;
+            });
+        }
+        catch
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                ConnectionDot.Background = new SolidColorBrush(Colors.Red);
+                ConnectionLabel.Text = "Disconnected";
+                ModelDropdown.ItemsSource = null;
+                RefreshButton.IsEnabled = true;
+            });
+        }
+    }
+
+    private void OnModelSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (ModelDropdown.SelectedItem is string model)
+        {
+            _selectedModel = model;
+        }
+    }
+
+    private async void OnRefreshClicked(object? sender, RoutedEventArgs e)
+    {
+        await LoadModelsAsync();
     }
 
     private void OnHideClicked(object? sender, RoutedEventArgs e)
@@ -215,7 +272,7 @@ public partial class MainWindow : Window
         _answerOverlay.Show();
         _answerOverlay.PositionBelowSubtitle(_subtitleOverlay);
 
-        _ollamaService = new OllamaService("qwen3-4b-thinking");
+        _ollamaService = new OllamaService(_selectedModel);
 
         _liveTranscription = new LiveTranscriptionService(
             ModelPath,
