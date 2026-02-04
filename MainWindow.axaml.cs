@@ -379,6 +379,10 @@ public partial class MainWindow : Window
                     _answerOverlay?.UpdateAnswer($"Q: {question}\nNo answer received.");
                 }
             }
+            catch (OperationCanceledException)
+            {
+                // Previous request was canceled by a newer question — ignore
+            }
             catch (Exception ex)
             {
                 _answerOverlay?.UpdateAnswer($"Q: {question}\nError: {ex.Message}");

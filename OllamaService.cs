@@ -25,6 +25,7 @@ public class LlmService : IDisposable
     };
 
     private readonly HttpClient _httpClient;
+    private readonly HttpClient _inferenceClient;
     private CancellationTokenSource? _currentRequest;
 
     public LlmModel? SelectedModel { get; set; }
@@ -32,6 +33,7 @@ public class LlmService : IDisposable
     public LlmService()
     {
         _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        _inferenceClient = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
     }
 
     public async Task<List<LlmModel>> ListAllModelsAsync()
@@ -114,9 +116,16 @@ public class LlmService : IDisposable
         if (SelectedModel == null)
             return "No model selected.";
 
-        _currentRequest?.Cancel();
+        // Cancel previous request gracefully
+        var oldCts = _currentRequest;
         _currentRequest = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var token = _currentRequest.Token;
+
+        if (oldCts != null)
+        {
+            oldCts.Cancel();
+            oldCts.Dispose();
+        }
 
         var requestBody = new
         {
@@ -131,9 +140,7 @@ public class LlmService : IDisposable
         var json = JsonSerializer.Serialize(requestBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        // Use a longer timeout for inference
-        using var inferenceClient = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-        var response = await inferenceClient.PostAsync(
+        var response = await _inferenceClient.PostAsync(
             $"{SelectedModel.BaseUrl}/v1/chat/completions", content, token);
         response.EnsureSuccessStatusCode();
 
@@ -159,5 +166,6 @@ public class LlmService : IDisposable
         _currentRequest?.Cancel();
         _currentRequest?.Dispose();
         _httpClient.Dispose();
+        _inferenceClient.Dispose();
     }
 }
