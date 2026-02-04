@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
@@ -6,15 +7,25 @@ namespace Clippy;
 
 public partial class SubtitleOverlayWindow : Window
 {
+    private bool _isResizing;
+    private Point _resizeStartPos;
+    private double _resizeStartWidth;
+    private double _resizeStartHeight;
+
     public SubtitleOverlayWindow()
     {
         InitializeComponent();
         PointerPressed += OnPointerPressed;
+
         ResizeGrip.PointerPressed += OnResizeGripPressed;
+        ResizeGrip.PointerMoved += OnResizeGripMoved;
+        ResizeGrip.PointerReleased += OnResizeGripReleased;
     }
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (_isResizing) return;
+
         if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
             BeginMoveDrag(e);
@@ -26,7 +37,35 @@ public partial class SubtitleOverlayWindow : Window
         if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
             e.Handled = true;
-            BeginResizeDrag(WindowEdge.SouthEast, e);
+            _isResizing = true;
+            _resizeStartPos = e.GetPosition(this);
+            _resizeStartWidth = Width;
+            _resizeStartHeight = Height;
+            e.Pointer.Capture(ResizeGrip);
+        }
+    }
+
+    private void OnResizeGripMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_isResizing) return;
+
+        var currentPos = e.GetPosition(this);
+        var deltaX = currentPos.X - _resizeStartPos.X;
+        var deltaY = currentPos.Y - _resizeStartPos.Y;
+
+        var newWidth = Math.Max(MinWidth, _resizeStartWidth + deltaX);
+        var newHeight = Math.Max(MinHeight, _resizeStartHeight + deltaY);
+
+        Width = newWidth;
+        Height = newHeight;
+    }
+
+    private void OnResizeGripReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_isResizing)
+        {
+            _isResizing = false;
+            e.Pointer.Capture(null);
         }
     }
 
