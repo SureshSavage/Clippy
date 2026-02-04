@@ -14,6 +14,7 @@ public partial class SubtitleOverlayWindow : Window
     private double _resizeStartHeight;
 
     public Action<string>? OnAskRequested { get; set; }
+    public Action? OnCloseRequested { get; set; }
 
     public SubtitleOverlayWindow()
     {
@@ -23,6 +24,11 @@ public partial class SubtitleOverlayWindow : Window
         ResizeGrip.PointerPressed += OnResizeGripPressed;
         ResizeGrip.PointerMoved += OnResizeGripMoved;
         ResizeGrip.PointerReleased += OnResizeGripReleased;
+    }
+
+    private void OnCloseClicked(object? sender, RoutedEventArgs e)
+    {
+        OnCloseRequested?.Invoke();
     }
 
     private void OnFontIncreaseClicked(object? sender, RoutedEventArgs e)

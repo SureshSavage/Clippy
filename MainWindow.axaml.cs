@@ -378,10 +378,12 @@ public partial class MainWindow : Window
 
         _subtitleOverlay = new SubtitleOverlayWindow();
         _subtitleOverlay.OnAskRequested = OnQuestionDetected;
+        _subtitleOverlay.OnCloseRequested = () => _ = StopSubtitling();
         _subtitleOverlay.Show();
         _subtitleOverlay.PositionAtBottomCenter();
 
         _answerOverlay = new AnswerOverlayWindow();
+        _answerOverlay.OnCloseRequested = () => _ = StopSubtitling();
         _answerOverlay.Show();
         _answerOverlay.PositionBelowSubtitle(_subtitleOverlay);
 

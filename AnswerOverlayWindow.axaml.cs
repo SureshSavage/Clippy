@@ -12,6 +12,8 @@ public partial class AnswerOverlayWindow : Window
     private double _resizeStartWidth;
     private double _resizeStartHeight;
 
+    public Action? OnCloseRequested { get; set; }
+
     public AnswerOverlayWindow()
     {
         InitializeComponent();
@@ -20,6 +22,11 @@ public partial class AnswerOverlayWindow : Window
         ResizeGrip.PointerPressed += OnResizeGripPressed;
         ResizeGrip.PointerMoved += OnResizeGripMoved;
         ResizeGrip.PointerReleased += OnResizeGripReleased;
+    }
+
+    private void OnCloseClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        OnCloseRequested?.Invoke();
     }
 
     private void OnFontIncreaseClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
