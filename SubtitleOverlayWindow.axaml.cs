@@ -25,6 +25,18 @@ public partial class SubtitleOverlayWindow : Window
         ResizeGrip.PointerReleased += OnResizeGripReleased;
     }
 
+    private void OnFontIncreaseClicked(object? sender, RoutedEventArgs e)
+    {
+        if (SubtitleText.FontSize < 72)
+            SubtitleText.FontSize += 2;
+    }
+
+    private void OnFontDecreaseClicked(object? sender, RoutedEventArgs e)
+    {
+        if (SubtitleText.FontSize > 10)
+            SubtitleText.FontSize -= 2;
+    }
+
     private void OnAskClicked(object? sender, RoutedEventArgs e)
     {
         var text = SubtitleText.Text?.Trim();

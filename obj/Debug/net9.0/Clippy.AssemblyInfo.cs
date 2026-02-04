@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Clippy")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+377770a76afb6330f09d3da6ddc3e732b0748e97")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c9c09f1b012543480eeff262d2a068a9ed440ad4")]
 [assembly: System.Reflection.AssemblyProductAttribute("Clippy")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Clippy")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

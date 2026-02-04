@@ -22,6 +22,18 @@ public partial class AnswerOverlayWindow : Window
         ResizeGrip.PointerReleased += OnResizeGripReleased;
     }
 
+    private void OnFontIncreaseClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (AnswerText.FontSize < 72)
+            AnswerText.FontSize += 2;
+    }
+
+    private void OnFontDecreaseClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (AnswerText.FontSize > 10)
+            AnswerText.FontSize -= 2;
+    }
+
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (_isResizing) return;
