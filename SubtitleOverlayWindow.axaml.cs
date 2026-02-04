@@ -118,6 +118,11 @@ public partial class SubtitleOverlayWindow : Window
         );
     }
 
+    public void SetModelLabel(string whisperModel)
+    {
+        ModelLabel.Text = $"Whisper: {whisperModel}";
+    }
+
     public void UpdateSubtitle(string text)
     {
         Dispatcher.UIThread.Post(() =>

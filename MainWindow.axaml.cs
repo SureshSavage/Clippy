@@ -379,6 +379,12 @@ public partial class MainWindow : Window
         _subtitleOverlay = new SubtitleOverlayWindow();
         _subtitleOverlay.OnAskRequested = OnQuestionDetected;
         _subtitleOverlay.OnCloseRequested = () => _ = StopSubtitling();
+
+        var whisperModelName = WhisperModelDropdown.SelectedItem is WhisperModelInfo wm
+            ? wm.Name
+            : Path.GetFileNameWithoutExtension(whisperPath);
+        _subtitleOverlay.SetModelLabel(whisperModelName);
+
         _subtitleOverlay.Show();
         _subtitleOverlay.PositionAtBottomCenter();
 
