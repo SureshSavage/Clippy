@@ -11,10 +11,15 @@ namespace Clippy;
 
 public class LiveTranscriptionService : IDisposable
 {
-    private static readonly HashSet<string> QuestionWords = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> QuestionStartWords = new(StringComparer.OrdinalIgnoreCase)
         { "what", "why", "how", "when", "where", "who", "which",
           "is", "are", "do", "does", "can", "could", "would",
-          "should", "will", "shall", "has", "have", "did", "was", "were" };
+          "should", "will", "shall", "has", "have", "did", "was", "were",
+          "explain", "explains", "describe", "define" };
+
+    private static readonly HashSet<string> QuestionKeywords = new(StringComparer.OrdinalIgnoreCase)
+        { "explain", "explains", "example", "using", "difference",
+          "how", "what", "compare", "between", "meaning" };
 
     private readonly string _modelPath;
     private readonly Action<string> _onTextUpdated;
@@ -233,10 +238,22 @@ public class LiveTranscriptionService : IDisposable
         if (trimmed.Contains('?'))
             return true;
 
-        var firstWord = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault();
+        var words = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0)
+            return false;
 
-        return firstWord != null && QuestionWords.Contains(firstWord);
+        // Check if the sentence starts with a question/command word
+        if (QuestionStartWords.Contains(words[0]))
+            return true;
+
+        // Check if any keyword appears anywhere in the text
+        foreach (var word in words)
+        {
+            if (QuestionKeywords.Contains(word))
+                return true;
+        }
+
+        return false;
     }
 
     public void Dispose()
