@@ -296,6 +296,7 @@ public partial class MainWindow : Window
         }
 
         _subtitleOverlay = new SubtitleOverlayWindow();
+        _subtitleOverlay.OnAskRequested = OnQuestionDetected;
         _subtitleOverlay.Show();
         _subtitleOverlay.PositionAtBottomCenter();
 

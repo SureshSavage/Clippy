@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 
 namespace Clippy;
@@ -12,6 +13,8 @@ public partial class SubtitleOverlayWindow : Window
     private double _resizeStartWidth;
     private double _resizeStartHeight;
 
+    public Action<string>? OnAskRequested { get; set; }
+
     public SubtitleOverlayWindow()
     {
         InitializeComponent();
@@ -20,6 +23,15 @@ public partial class SubtitleOverlayWindow : Window
         ResizeGrip.PointerPressed += OnResizeGripPressed;
         ResizeGrip.PointerMoved += OnResizeGripMoved;
         ResizeGrip.PointerReleased += OnResizeGripReleased;
+    }
+
+    private void OnAskClicked(object? sender, RoutedEventArgs e)
+    {
+        var text = SubtitleText.Text?.Trim();
+        if (!string.IsNullOrWhiteSpace(text) && text != "Listening...")
+        {
+            OnAskRequested?.Invoke(text);
+        }
     }
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
