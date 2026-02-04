@@ -30,11 +30,11 @@ public partial class MainWindow : Window
     private SubtitleOverlayWindow? _subtitleOverlay;
     private AnswerOverlayWindow? _answerOverlay;
     private LiveTranscriptionService? _liveTranscription;
-    private OllamaService? _ollamaService;
+    private LlmService? _llmService;
     private bool _isSubtitling;
 
-    private OllamaService _ollamaManager = new(baseUrl: "http://localhost:11434");
-    private string _selectedModel = "";
+    private readonly LlmService _llmManager = new();
+    private List<LlmModel> _availableModels = new();
 
     public MainWindow()
     {
@@ -54,52 +54,44 @@ public partial class MainWindow : Window
         ConnectionLabel.Foreground = new SolidColorBrush(Colors.Gray);
         RefreshButton.IsEnabled = false;
         ModelDropdown.ItemsSource = null;
+        _availableModels.Clear();
 
         try
         {
-            var models = await Task.Run(() => _ollamaManager.ListModelsAsync());
+            var models = await Task.Run(() => _llmManager.ListAllModelsAsync());
+            _availableModels = models;
 
             if (models.Count == 0)
             {
                 ConnectionDot.Background = new SolidColorBrush(Colors.Orange);
                 ConnectionLabel.Text = "No models";
                 ConnectionLabel.Foreground = new SolidColorBrush(Colors.Orange);
-                SetStatus("Ollama is running but has no models. Run: ollama pull <model-name>");
+                SetStatus("No backends found. Start Ollama (port 11434) or LlamaBarn (port 2276).");
             }
             else
             {
+                // Group backends for status label
+                var backends = new HashSet<string>();
+                foreach (var m in models)
+                    backends.Add(m.Backend);
+                var backendList = string.Join(" + ", backends);
+
                 ConnectionDot.Background = new SolidColorBrush(Colors.LimeGreen);
-                ConnectionLabel.Text = $"Connected ({models.Count})";
+                ConnectionLabel.Text = $"{backendList} ({models.Count})";
                 ConnectionLabel.Foreground = new SolidColorBrush(Colors.LimeGreen);
 
                 ModelDropdown.ItemsSource = models;
+                ModelDropdown.SelectedIndex = 0;
 
-                var idx = models.IndexOf(_selectedModel);
-                ModelDropdown.SelectedIndex = idx >= 0 ? idx : 0;
-
-                SetStatus($"Loaded {models.Count} model(s) from Ollama.");
+                SetStatus($"Loaded {models.Count} model(s) from {backendList}.");
             }
-        }
-        catch (HttpRequestException)
-        {
-            ConnectionDot.Background = new SolidColorBrush(Colors.Red);
-            ConnectionLabel.Text = "Disconnected";
-            ConnectionLabel.Foreground = new SolidColorBrush(Colors.Red);
-            SetStatus("Cannot connect to Ollama at localhost:11434. Is Ollama running?");
-        }
-        catch (TaskCanceledException)
-        {
-            ConnectionDot.Background = new SolidColorBrush(Colors.Red);
-            ConnectionLabel.Text = "Timeout";
-            ConnectionLabel.Foreground = new SolidColorBrush(Colors.Red);
-            SetStatus("Connection to Ollama timed out.");
         }
         catch (Exception ex)
         {
             ConnectionDot.Background = new SolidColorBrush(Colors.Red);
             ConnectionLabel.Text = "Error";
             ConnectionLabel.Foreground = new SolidColorBrush(Colors.Red);
-            SetStatus($"Ollama error: {ex.Message}");
+            SetStatus($"Error loading models: {ex.Message}");
         }
         finally
         {
@@ -109,10 +101,14 @@ public partial class MainWindow : Window
 
     private void OnModelSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (ModelDropdown.SelectedItem is string model)
-        {
-            _selectedModel = model;
-        }
+        // Selection tracked via _availableModels + SelectedIndex
+    }
+
+    private LlmModel? GetSelectedModel()
+    {
+        if (ModelDropdown.SelectedItem is LlmModel model)
+            return model;
+        return null;
     }
 
     private async void OnRefreshClicked(object? sender, RoutedEventArgs e)
@@ -292,7 +288,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (string.IsNullOrEmpty(_selectedModel))
+        var selected = GetSelectedModel();
+        if (selected == null)
         {
             SetStatus("No model selected. Please select a model from the dropdown first.");
             return;
@@ -306,7 +303,7 @@ public partial class MainWindow : Window
         _answerOverlay.Show();
         _answerOverlay.PositionBelowSubtitle(_subtitleOverlay);
 
-        _ollamaService = new OllamaService(_selectedModel);
+        _llmService = new LlmService { SelectedModel = selected };
 
         _liveTranscription = new LiveTranscriptionService(
             ModelPath,
@@ -330,8 +327,8 @@ public partial class MainWindow : Window
             _answerOverlay = null;
             _liveTranscription?.Dispose();
             _liveTranscription = null;
-            _ollamaService?.Dispose();
-            _ollamaService = null;
+            _llmService?.Dispose();
+            _llmService = null;
             SetStatus($"Failed to start subtitling: {ex.Message}");
         }
     }
@@ -353,8 +350,8 @@ public partial class MainWindow : Window
         _answerOverlay?.Close();
         _answerOverlay = null;
 
-        _ollamaService?.Dispose();
-        _ollamaService = null;
+        _llmService?.Dispose();
+        _llmService = null;
 
         _isSubtitling = false;
         SubtitleButton.Content = "Listen+Subtitle";
@@ -368,11 +365,11 @@ public partial class MainWindow : Window
 
         _ = Task.Run(async () =>
         {
-            if (_ollamaService == null) return;
+            if (_llmService == null) return;
 
             try
             {
-                var answer = await _ollamaService.AskAsync(question);
+                var answer = await _llmService.AskAsync(question);
                 if (!string.IsNullOrWhiteSpace(answer))
                 {
                     _answerOverlay?.UpdateAnswer($"Q: {question}\nA: {answer}");
