@@ -15,11 +15,11 @@ public class LiveTranscriptionService : IDisposable
         { "what", "why", "how", "when", "where", "who", "which",
           "is", "are", "do", "does", "can", "could", "would",
           "should", "will", "shall", "has", "have", "did", "was", "were",
-          "explain", "explains", "describe", "define" };
+          "explain", "explains", "describe", "define", "tell" };
 
     private static readonly HashSet<string> QuestionKeywords = new(StringComparer.OrdinalIgnoreCase)
         { "explain", "explains", "example", "using", "difference",
-          "how", "what", "compare", "between", "meaning" };
+          "how", "what", "compare", "between", "meaning", "tell", "me" };
 
     private readonly string _modelPath;
     private readonly Action<string> _onTextUpdated;
