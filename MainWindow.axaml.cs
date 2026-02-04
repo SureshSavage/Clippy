@@ -451,9 +451,12 @@ public partial class MainWindow : Window
 
     private void OnQuestionDetected(string question)
     {
-        _answerOverlay?.UpdateAnswer($"Q: {question}\nThinking...");
-
-        var context = ContextTextBox.Text?.Trim();
+        string? context = null;
+        Dispatcher.UIThread.Invoke(() =>
+        {
+            _answerOverlay?.UpdateAnswer($"Q: {question}\nThinking...");
+            context = ContextTextBox.Text?.Trim();
+        });
 
         _ = Task.Run(async () =>
         {
