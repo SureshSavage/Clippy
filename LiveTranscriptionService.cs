@@ -24,13 +24,22 @@ public class LiveTranscriptionService : IDisposable
     private readonly string _modelPath;
     private readonly Action<string> _onTextUpdated;
     private readonly Action<string>? _onQuestionDetected;
-    private readonly int _chunkIntervalMs;
+
+    // VAD parameters
+    private const int SampleRate = 16000;
+    private const int FrameSamples = 1600;       // 100ms per frame
+    private const int FrameBytes = FrameSamples * 2;
+    private const float SilenceThreshold = 0.015f; // RMS below this = silence
+    private const int SilenceFramesToTrigger = 6;  // 600ms of silence to trigger transcription
+    private const int MinSpeechFrames = 3;         // at least 300ms of speech to bother transcribing
+    private const int MaxSpeechSeconds = 15;       // cap at 15s to avoid huge chunks
+    private const int MaxSpeechFrames = MaxSpeechSeconds * (SampleRate / FrameSamples);
 
     private WhisperFactory? _factory;
     private WhisperProcessor? _processor;
     private Process? _ffmpegProcess;
     private CancellationTokenSource? _cts;
-    private Task? _readTask;
+    private Task? _vadTask;
     private Task? _transcribeTask;
 
     private readonly List<string> _recentLines = new();
@@ -40,12 +49,11 @@ public class LiveTranscriptionService : IDisposable
         string modelPath,
         Action<string> onTextUpdated,
         Action<string>? onQuestionDetected = null,
-        int chunkIntervalMs = 1500)
+        int chunkIntervalMs = 1500) // kept for API compat but unused
     {
         _modelPath = modelPath;
         _onTextUpdated = onTextUpdated;
         _onQuestionDetected = onQuestionDetected;
-        _chunkIntervalMs = chunkIntervalMs;
     }
 
     public void Start()
@@ -78,61 +86,130 @@ public class LiveTranscriptionService : IDisposable
         if (_ffmpegProcess == null)
             throw new InvalidOperationException("Failed to start ffmpeg.");
 
-        var pcmQueue = new Queue<float[]>();
+        var speechQueue = new Queue<float[]>();
         var queueLock = new object();
         var dataAvailable = new AutoResetEvent(false);
 
-        _readTask = Task.Run(() => ReadAudioLoop(
+        _vadTask = Task.Run(() => VadLoop(
             _ffmpegProcess.StandardOutput.BaseStream,
-            pcmQueue, queueLock, dataAvailable,
+            speechQueue, queueLock, dataAvailable,
             _cts.Token));
 
         _transcribeTask = Task.Run(() => TranscribeLoop(
-            pcmQueue, queueLock, dataAvailable,
+            speechQueue, queueLock, dataAvailable,
             _cts.Token));
     }
 
-    private void ReadAudioLoop(
+    private void VadLoop(
         Stream stdout,
-        Queue<float[]> pcmQueue,
+        Queue<float[]> speechQueue,
         object queueLock,
         AutoResetEvent dataAvailable,
         CancellationToken ct)
     {
-        var chunkSeconds = _chunkIntervalMs / 1000.0;
-        var bytesPerChunk = (int)(16000 * 2 * chunkSeconds);
-        var buffer = new byte[bytesPerChunk];
+        var frameBuffer = new byte[FrameBytes];
+        var speechBuffer = new List<float>();
+        int silentFrames = 0;
+        int speechFrames = 0;
 
         while (!ct.IsCancellationRequested)
         {
+            // Read one 100ms frame
             int totalRead = 0;
-            while (totalRead < bytesPerChunk && !ct.IsCancellationRequested)
+            while (totalRead < FrameBytes && !ct.IsCancellationRequested)
             {
-                int read = stdout.Read(buffer, totalRead, bytesPerChunk - totalRead);
+                int read = stdout.Read(frameBuffer, totalRead, FrameBytes - totalRead);
                 if (read == 0) return;
                 totalRead += read;
             }
 
             if (ct.IsCancellationRequested) break;
 
-            var sampleCount = totalRead / 2;
-            var samples = new float[sampleCount];
-            for (int i = 0; i < sampleCount; i++)
+            // Convert bytes to float samples
+            var frameSamples = new float[totalRead / 2];
+            for (int i = 0; i < frameSamples.Length; i++)
             {
-                short sample = BitConverter.ToInt16(buffer, i * 2);
-                samples[i] = sample / 32768.0f;
+                short sample = BitConverter.ToInt16(frameBuffer, i * 2);
+                frameSamples[i] = sample / 32768.0f;
             }
 
-            lock (queueLock)
+            // Calculate RMS energy of this frame
+            float rms = CalculateRms(frameSamples);
+            bool isSpeech = rms >= SilenceThreshold;
+
+            if (isSpeech)
             {
-                pcmQueue.Enqueue(samples);
+                // Speech detected — accumulate
+                speechBuffer.AddRange(frameSamples);
+                speechFrames++;
+                silentFrames = 0;
+
+                // Safety cap: if speaking for too long, flush what we have
+                if (speechFrames >= MaxSpeechFrames)
+                {
+                    FlushSpeech(speechBuffer, speechQueue, queueLock, dataAvailable);
+                    speechBuffer.Clear();
+                    speechFrames = 0;
+                }
             }
-            dataAvailable.Set();
+            else
+            {
+                if (speechFrames > 0)
+                {
+                    // We were in speech, now silence
+                    silentFrames++;
+
+                    // Keep adding silence frames to capture trailing audio
+                    speechBuffer.AddRange(frameSamples);
+
+                    if (silentFrames >= SilenceFramesToTrigger)
+                    {
+                        // Enough silence — send speech to transcription if long enough
+                        if (speechFrames >= MinSpeechFrames)
+                        {
+                            FlushSpeech(speechBuffer, speechQueue, queueLock, dataAvailable);
+                        }
+
+                        speechBuffer.Clear();
+                        speechFrames = 0;
+                        silentFrames = 0;
+                    }
+                }
+                // else: silence with no prior speech — ignore
+            }
+        }
+
+        // Flush any remaining speech on shutdown
+        if (speechFrames >= MinSpeechFrames && speechBuffer.Count > 0)
+        {
+            FlushSpeech(speechBuffer, speechQueue, queueLock, dataAvailable);
         }
     }
 
+    private static float CalculateRms(float[] samples)
+    {
+        double sum = 0;
+        for (int i = 0; i < samples.Length; i++)
+            sum += samples[i] * samples[i];
+        return (float)Math.Sqrt(sum / samples.Length);
+    }
+
+    private static void FlushSpeech(
+        List<float> speechBuffer,
+        Queue<float[]> speechQueue,
+        object queueLock,
+        AutoResetEvent dataAvailable)
+    {
+        var speech = speechBuffer.ToArray();
+        lock (queueLock)
+        {
+            speechQueue.Enqueue(speech);
+        }
+        dataAvailable.Set();
+    }
+
     private async Task TranscribeLoop(
-        Queue<float[]> pcmQueue,
+        Queue<float[]> speechQueue,
         object queueLock,
         AutoResetEvent dataAvailable,
         CancellationToken ct)
@@ -144,24 +221,24 @@ public class LiveTranscriptionService : IDisposable
             float[]? samples = null;
             lock (queueLock)
             {
-                if (pcmQueue.Count == 0) continue;
+                if (speechQueue.Count == 0) continue;
 
-                // Drain the queue: merge all pending chunks to avoid falling behind
-                if (pcmQueue.Count == 1)
+                // Drain and merge all pending speech segments
+                if (speechQueue.Count == 1)
                 {
-                    samples = pcmQueue.Dequeue();
+                    samples = speechQueue.Dequeue();
                 }
                 else
                 {
                     var totalLength = 0;
-                    foreach (var chunk in pcmQueue)
+                    foreach (var chunk in speechQueue)
                         totalLength += chunk.Length;
 
                     samples = new float[totalLength];
                     var offset = 0;
-                    while (pcmQueue.Count > 0)
+                    while (speechQueue.Count > 0)
                     {
-                        var chunk = pcmQueue.Dequeue();
+                        var chunk = speechQueue.Dequeue();
                         Array.Copy(chunk, 0, samples, offset, chunk.Length);
                         offset += chunk.Length;
                     }
@@ -226,8 +303,8 @@ public class LiveTranscriptionService : IDisposable
             }
         }
 
-        if (_readTask != null)
-            try { await _readTask; } catch { }
+        if (_vadTask != null)
+            try { await _vadTask; } catch { }
         if (_transcribeTask != null)
             try { await _transcribeTask; } catch { }
     }
@@ -242,11 +319,9 @@ public class LiveTranscriptionService : IDisposable
         if (words.Length == 0)
             return false;
 
-        // Check if the sentence starts with a question/command word
         if (QuestionStartWords.Contains(words[0]))
             return true;
 
-        // Check if any keyword appears anywhere in the text
         foreach (var word in words)
         {
             if (QuestionKeywords.Contains(word))
