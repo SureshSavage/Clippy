@@ -111,7 +111,7 @@ public class LlmService : IDisposable
         return models;
     }
 
-    public async Task<string> AskAsync(string question, CancellationToken ct = default)
+    public async Task<string> AskAsync(string question, string? context = null, CancellationToken ct = default)
     {
         if (SelectedModel == null)
             return "No model selected.";
@@ -127,13 +127,19 @@ public class LlmService : IDisposable
             oldCts.Dispose();
         }
 
+        var messages = new List<object>();
+
+        if (!string.IsNullOrWhiteSpace(context))
+        {
+            messages.Add(new { role = "system", content = context });
+        }
+
+        messages.Add(new { role = "user", content = $"Answer this question concisely in 1-2 sentences:\n\n{question}" });
+
         var requestBody = new
         {
             model = SelectedModel.Name,
-            messages = new[]
-            {
-                new { role = "user", content = $"Answer this question concisely in 1-2 sentences:\n\n{question}" }
-            },
+            messages,
             stream = false
         };
 

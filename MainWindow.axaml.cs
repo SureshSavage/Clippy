@@ -453,13 +453,15 @@ public partial class MainWindow : Window
     {
         _answerOverlay?.UpdateAnswer($"Q: {question}\nThinking...");
 
+        var context = ContextTextBox.Text?.Trim();
+
         _ = Task.Run(async () =>
         {
             if (_llmService == null) return;
 
             try
             {
-                var answer = await _llmService.AskAsync(question);
+                var answer = await _llmService.AskAsync(question, context);
                 if (!string.IsNullOrWhiteSpace(answer))
                 {
                     _answerOverlay?.UpdateAnswer($"Q: {question}\nA: {answer}");
