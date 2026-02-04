@@ -10,6 +10,7 @@ public partial class AnswerOverlayWindow : Window
     {
         InitializeComponent();
         PointerPressed += OnPointerPressed;
+        ResizeGrip.PointerPressed += OnResizeGripPressed;
     }
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -17,6 +18,15 @@ public partial class AnswerOverlayWindow : Window
         if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
             BeginMoveDrag(e);
+        }
+    }
+
+    private void OnResizeGripPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            e.Handled = true;
+            BeginResizeDrag(WindowEdge.SouthEast, e);
         }
     }
 

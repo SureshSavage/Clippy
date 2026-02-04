@@ -3,11 +3,12 @@
         x:Class="Clippy.SubtitleOverlayWindow"
         Title="Subtitles"
         Width="800" Height="120"
+        MinWidth="300" MinHeight="80"
         Topmost="True"
         SystemDecorations="None"
         TransparencyLevelHint="Transparent"
         Background="Transparent"
-        CanResize="False"
+        CanResize="True"
         ShowInTaskbar="False"
         WindowStartupLocation="Manual">
 
@@ -15,15 +16,38 @@
             CornerRadius="12"
             Padding="24,12"
             Margin="8">
-        <TextBlock x:Name="SubtitleText"
-                   Text="Listening..."
-                   FontSize="22"
-                   FontWeight="SemiBold"
-                   Foreground="White"
-                   TextWrapping="Wrap"
-                   TextAlignment="Center"
-                   VerticalAlignment="Center"
-                   HorizontalAlignment="Center"
-                   MaxWidth="750" />
+        <Grid>
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Margin="0,0,16,0">
+                <TextBlock x:Name="SubtitleText"
+                           Text="Listening..."
+                           FontSize="22"
+                           FontWeight="SemiBold"
+                           Foreground="White"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Center" />
+            </ScrollViewer>
+
+            <!-- Resize grip -->
+            <Border x:Name="ResizeGrip"
+                    Width="18" Height="18"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Cursor="BottomRightCorner"
+                    Background="Transparent"
+                    ToolTip.Tip="Drag to resize">
+                <Canvas Width="14" Height="14">
+                    <Line StartPoint="10,0" EndPoint="0,10"
+                          Stroke="#80FFFFFF" StrokeThickness="1.5" />
+                    <Line StartPoint="14,0" EndPoint="0,14"
+                          Stroke="#80FFFFFF" StrokeThickness="1.5" />
+                    <Line StartPoint="14,4" EndPoint="4,14"
+                          Stroke="#80FFFFFF" StrokeThickness="1.5" />
+                </Canvas>
+            </Border>
+        </Grid>
     </Border>
 </Window>
