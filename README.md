@@ -23,14 +23,15 @@ A macOS desktop application that provides intelligent clipboard management, real
 | Feature | Description |
 |---------|-------------|
 | **Screenshot Capture** | Captures the screen using macOS native `screencapture` and saves to `~/Desktop/Clippy_Screenshots/` |
-| **Audio Recording & Transcription** | Records microphone input via ffmpeg, transcribes with OpenAI Whisper (ggml-base.en model) |
+| **Audio Recording & Transcription** | Records microphone input via ffmpeg, transcribes with OpenAI Whisper (selectable model) |
 | **Live Subtitling** | Continuous real-time transcription displayed as a resizable, draggable overlay at the bottom of the screen |
 | **Voice Activity Detection** | Audio is transcribed based on speech/silence boundaries instead of fixed intervals — complete utterances are captured naturally |
 | **Question Detection** | Automatically detects spoken questions using two-tier pattern matching (start words + keywords anywhere in text) |
 | **Manual Ask Button** | An "Ask" button on the subtitle overlay lets users manually send the current transcript to the LLM if automatic detection missed a question |
 | **AI-Powered Answers** | Routes detected questions to a local LLM (Ollama or LlamaBarn) and displays concise answers in a separate overlay |
 | **Multi-Backend Support** | Probes both Ollama (port 11434) and LlamaBarn (port 2276) on startup, merging all models into a single dropdown |
-| **Model Selection** | Shows connection status (green/red/orange indicator) and lists all available models from all backends in a dropdown |
+| **LLM Model Selection** | Shows connection status (green/red/orange indicator) and lists all available LLM models from all backends in a dropdown |
+| **Whisper Model Selection** | Dropdown listing all available Whisper ggml models (tiny through large-v3) with in-app download and size info |
 | **Resizable Overlays** | Both overlay windows can be resized by dragging the grip in the bottom-right corner, with scrollable content |
 | **System Tray Integration** | Minimizes to the macOS menu bar with show/exit controls |
 | **Draggable Overlays** | Both subtitle and answer overlay windows can be repositioned via click-and-drag |
@@ -41,8 +42,11 @@ A macOS desktop application that provides intelligent clipboard management, real
 ┌──────────────────────────────────────────────────────────────┐
 │                        MainWindow                            │
 │  ┌────────────────────────────────────────────────────────┐  │
-│  │  Model Status Bar                                      │  │
+│  │  LLM Status Bar                                        │  │
 │  │  [● Ollama + LlamaBarn (5)]  [ComboBox]  [Refresh]     │  │
+│  ├────────────────────────────────────────────────────────┤  │
+│  │  Whisper Model Bar                                      │  │
+│  │  [Whisper:]  [ComboBox ▾ Base (English)]  [Download]    │  │
 │  └────────────────────────────────────────────────────────┘  │
 │  (Orchestrates UI, buttons, model selection)                  │
 ├──────────┬──────────────────┬────────────────────────────────┤
@@ -57,8 +61,8 @@ A macOS desktop application that provides intelligent clipboard management, real
 │                    │  Queue<float[]>   │    AskAsync()
 │                    │       ↓           │              │
 │                    │  Whisper.net      │              │
-│                    │  (greedy, multi-  │              │
-│                    │   threaded)       │              │
+│                    │  (selectable      │              │
+│                    │   model size)     │              │
 │                    │       ↓           │              │
 │                    │  Question detect  │──────────────┘
 │                    └───────┬───────────┘        ▲
@@ -68,6 +72,11 @@ A macOS desktop application that provides intelligent clipboard management, real
 │    (transcript + Ask btn)      (Q&A display)
 │    [resizable, scrollable]     [resizable, scrollable]
 └──────────────────────────────────────────────────────────────┘
+
+WhisperModelManager
+  └── Scans ~/.clippy/models/ for installed ggml-*.bin files
+  └── Lists known models (tiny → large-v3) with sizes
+  └── Downloads models from HuggingFace with progress
 ```
 
 ## Technology Stack
@@ -82,6 +91,7 @@ A macOS desktop application that provides intelligent clipboard management, real
 | Audio Capture | ffmpeg (avfoundation) | System-installed |
 | LLM Backends | Ollama + LlamaBarn (OpenAI-compatible API) | External services |
 | LLM Model | Selectable via UI from all backends | Configurable |
+| Whisper Model | Selectable via UI from installed ggml models | Configurable |
 | Screenshots | macOS `screencapture` | System utility |
 
 ## Project Structure
@@ -93,7 +103,7 @@ Clippy/
 ├── App.axaml                          # Application XAML root (Fluent theme)
 ├── App.axaml.cs                       # Application lifecycle, tray icon setup
 ├── Program.cs                         # Entry point
-├── MainWindow.axaml                   # Main window UI layout (model bar + buttons)
+├── MainWindow.axaml                   # Main window UI layout (LLM bar + Whisper bar + buttons)
 ├── MainWindow.axaml.cs                # Main window logic (model mgmt, recording, subtitling)
 ├── SubtitleOverlayWindow.axaml        # Subtitle overlay UI (resizable, scrollable, Ask button)
 ├── SubtitleOverlayWindow.axaml.cs     # Subtitle overlay logic (drag, resize, ask callback)
@@ -101,6 +111,7 @@ Clippy/
 ├── AnswerOverlayWindow.axaml.cs       # Answer overlay logic (drag, resize)
 ├── LiveTranscriptionService.cs        # VAD-based audio capture and transcription engine
 ├── OllamaService.cs                   # Multi-backend LLM client (LlmService, LlmModel)
+├── WhisperModelManager.cs             # Whisper model discovery, listing, and download
 ├── Clippy.csproj                      # Project file and NuGet dependencies
 └── README.md
 ```
@@ -117,19 +128,36 @@ Clippy/
   ```bash
   brew install ollama
   ```
-- **Whisper model file** — English base model for speech recognition
 
 ## Setup
 
-### 1. Install the Whisper Model
+### 1. Install a Whisper Model
 
-Create the model directory and download the model:
+Models can be downloaded directly from the app using the **Download** button next to the Whisper dropdown. Alternatively, download manually:
 
 ```bash
 mkdir -p ~/.clippy/models
-# Download ggml-base.en.bin from https://huggingface.co/ggerganov/whisper.cpp/tree/main
-# and place it at ~/.clippy/models/ggml-base.en.bin
+# Download any ggml model from https://huggingface.co/ggerganov/whisper.cpp/tree/main
+# Example: ggml-base.en.bin (142 MB, good starting point)
+curl -L -o ~/.clippy/models/ggml-base.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
 ```
+
+Available Whisper models (larger = more accurate, slower):
+
+| Model | File | Size | Notes |
+|-------|------|------|-------|
+| Tiny (English) | `ggml-tiny.en.bin` | 75 MB | Fastest, lowest accuracy |
+| Tiny | `ggml-tiny.bin` | 75 MB | Multilingual |
+| Base (English) | `ggml-base.en.bin` | 142 MB | Good balance for English |
+| Base | `ggml-base.bin` | 142 MB | Multilingual |
+| Small (English) | `ggml-small.en.bin` | 466 MB | Better for technical words |
+| Small | `ggml-small.bin` | 466 MB | Multilingual |
+| Medium (English) | `ggml-medium.en.bin` | 1.5 GB | High accuracy |
+| Medium | `ggml-medium.bin` | 1.5 GB | Multilingual |
+| Large v3 | `ggml-large-v3.bin` | 2.9 GB | Best accuracy, slowest |
+
+For better recognition of technical vocabulary, use **Small** or **Medium** English models.
 
 ### 2. Set Up LLM Backend(s)
 
@@ -182,7 +210,7 @@ Output artifacts:
 
 ## Usage
 
-### Model Selection
+### LLM Model Selection
 On startup, Clippy probes both Ollama (port 11434) and LlamaBarn (port 2276):
 - **Green dot** + "Ollama + LlamaBarn (5)" — Both backends reachable; all models listed in the dropdown with backend labels (e.g. `qwen3-4b-thinking [LlamaBarn]`).
 - **Green dot** + "Ollama (3)" — Only Ollama is reachable.
@@ -191,16 +219,24 @@ On startup, Clippy probes both Ollama (port 11434) and LlamaBarn (port 2276):
 
 Select any model from the dropdown before starting a Listen+Subtitle session.
 
+### Whisper Model Selection
+The Whisper model bar shows all known ggml models with their install status:
+- **Installed models** show `[installed]` in the dropdown and are ready to use.
+- **Uninstalled models** show their size (e.g. `Small (English) (466 MB)`). Select one and click **Download** to install it — progress is shown as a percentage on the button.
+- The first installed model is auto-selected on startup.
+- Any `.bin` file dropped into `~/.clippy/models/` is automatically detected.
+- Changing the Whisper model takes effect on the next Listen or Listen+Subtitle session.
+
 ### Clip-it (Screenshot)
 Click **Clip-it** to capture the screen. The window hides during capture to stay out of the screenshot. Images are saved to `~/Desktop/Clippy_Screenshots/` with timestamped filenames.
 
 ### Listen (Record & Transcribe)
-Click **Listen** to start recording from the default microphone. Click again to stop. The recorded audio is transcribed using Whisper and the transcript is saved to `~/Desktop/Clippy_Transcripts/`.
+Click **Listen** to start recording from the default microphone. Click again to stop. The recorded audio is transcribed using the selected Whisper model and the transcript is saved to `~/Desktop/Clippy_Transcripts/`.
 
 ### Listen+Subtitle (Live Transcription)
 Click **Listen+Subtitle** to enable continuous real-time transcription. A subtitle overlay appears at the bottom of the screen showing the last 3 lines of recognized speech. Audio is processed using voice activity detection — transcription happens when a pause in speech is detected, giving complete natural utterances.
 
-If a question is detected, it is automatically sent to the selected model and the answer appears in the blue overlay below. If automatic detection missed a question, click the **Ask** button on the subtitle overlay to manually send the current text.
+If a question is detected, it is automatically sent to the selected LLM model and the answer appears in the blue overlay below. If automatic detection missed a question, click the **Ask** button on the subtitle overlay to manually send the current text.
 
 Both overlays can be **dragged** anywhere on screen and **resized** by dragging the grip in the bottom-right corner. Content scrolls when it overflows.
 
@@ -229,7 +265,9 @@ The multi-backend LLM client is configured in `OllamaService.cs`:
 
 | Parameter | Value |
 |-----------|-------|
-| Model path | `~/.clippy/models/ggml-base.en.bin` |
+| Model directory | `~/.clippy/models/` |
+| Default model | `ggml-base.en.bin` (fallback if no selection) |
+| Download source | `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/` |
 | Language | English (`en`) |
 | Sample rate | 16 kHz |
 | Channels | Mono |
@@ -261,19 +299,49 @@ Two-tier pattern matching with `HashSet<string>` (O(1) case-insensitive lookups)
 
 ### MainWindow
 
-The primary UI controller (600x420). Orchestrates all features — model management, screenshot capture, audio recording, live subtitling — and manages the lifecycle of overlay windows and services.
+The primary UI controller (600x490). Orchestrates all features — model management, screenshot capture, audio recording, live subtitling — and manages the lifecycle of overlay windows and services.
 
-**Model Status Bar:**
+**LLM Status Bar:**
 - **Connection indicator** — Green/orange/red dot showing backend connectivity
 - **Connection label** — Lists connected backends and model count
-- **Model dropdown** — ComboBox showing all models with backend labels (e.g. `model-name [Ollama]`)
+- **Model dropdown** — ComboBox showing all LLM models with backend labels (e.g. `model-name [Ollama]`)
 - **Refresh button** — Re-probes all backends for the latest model list
+
+**Whisper Model Bar:**
+- **Label** — "Whisper:" indicating the transcription model section
+- **Model dropdown** — ComboBox listing all known Whisper ggml models with install status and size
+- **Download button** — Downloads the selected uninstalled model from HuggingFace with live progress
 
 **Buttons:**
 - **Clip-it** — Screenshot capture
-- **Listen** — Toggle audio recording and transcription
-- **Listen+Subtitle** — Toggle live transcription with overlays (uses selected model)
+- **Listen** — Toggle audio recording and transcription (uses selected Whisper model)
+- **Listen+Subtitle** — Toggle live transcription with overlays (uses selected Whisper and LLM models)
 - **Hide to Menu Bar** — Minimize to system tray
+
+### WhisperModelManager
+
+Manages Whisper model discovery and installation. Located in `WhisperModelManager.cs`.
+
+**Capabilities:**
+- `GetAvailableModels()` — Scans `~/.clippy/models/` for installed ggml models, returns all known models with install status
+- `GetCurrentModel()` — Returns the first installed model
+- `DownloadModelAsync()` — Downloads a model from HuggingFace with progress callback (percentage)
+
+**Data model:**
+```csharp
+record WhisperModelInfo(string Name, string FileName, long SizeMb, bool IsInstalled, string FilePath)
+// Example: WhisperModelInfo("Small (English)", "ggml-small.en.bin", 466, true, "/Users/.../.clippy/models/ggml-small.en.bin")
+// Displays as: "Small (English) (466 MB) [installed]"
+```
+
+**Known models (auto-listed):**
+- Tiny / Tiny (English) — 75 MB
+- Base / Base (English) — 142 MB
+- Small / Small (English) — 466 MB
+- Medium / Medium (English) — 1.5 GB
+- Large v3 — 2.9 GB
+
+Custom `.bin` files placed in `~/.clippy/models/` are also detected automatically.
 
 ### LiveTranscriptionService
 
@@ -281,6 +349,8 @@ The VAD-based real-time audio processing engine. Runs two background threads:
 
 1. **VadLoop** — Reads 100ms audio frames from ffmpeg, calculates RMS energy to detect speech vs. silence. Accumulates audio during speech, then flushes to the transcription queue when 600ms of silence is detected after speech.
 2. **TranscribeLoop** — Drains all pending speech segments from the queue (merging if multiple accumulated), runs them through Whisper, and checks for questions.
+
+Accepts a model path parameter so the caller can pass the user-selected Whisper model.
 
 **How VAD works:**
 ```
@@ -360,7 +430,7 @@ VadLoop (100ms frames, RMS energy → speech/silence detection)
 Thread-safe Queue<float[]> (drain & merge on dequeue)
     │
     ▼
-TranscribeLoop (Whisper.net — greedy, multi-threaded, no-context)
+TranscribeLoop (Whisper.net — selected model, greedy, multi-threaded, no-context)
     │
     ├──► SubtitleOverlayWindow (rolling 3-line display + Ask button)
     │                                          │
@@ -379,27 +449,43 @@ AnswerOverlayWindow (Q&A display)
 ```
 App startup / Refresh button click
     │
+    ├── LLM Models ──────────────────────────────────────────────
+    │   │
+    │   ▼
+    │   LlmService.ListAllModelsAsync()
+    │   │
+    │   ├── Probe Ollama (localhost:11434)
+    │   │     ├── Try /api/tags → parse "models[].name"
+    │   │     └── Fallback /v1/models → parse "data[].id"
+    │   │
+    │   ├── Probe LlamaBarn (localhost:2276)
+    │   │     ├── Try /api/tags → parse "models[].name"
+    │   │     └── Fallback /v1/models → parse "data[].id"
+    │   │
+    │   ├── Both succeed → Green dot, "Ollama + LlamaBarn (N)"
+    │   ├── One succeeds → Green dot, "Backend (N)"
+    │   ├── None with models → Orange dot, "No models"
+    │   └── All fail → Red dot, "Error"
+    │
+    ├── Whisper Models ──────────────────────────────────────────
+    │   │
+    │   ▼
+    │   WhisperModelManager.GetAvailableModels()
+    │   │
+    │   ├── List known models (tiny → large-v3) with install status
+    │   ├── Scan ~/.clippy/models/ for additional .bin files
+    │   ├── Auto-select first installed model
+    │   └── Show "Download" button for uninstalled models
+    │         │
+    │         ▼ (on click)
+    │   WhisperModelManager.DownloadModelAsync()
+    │         └── Stream from HuggingFace → progress % → refresh list
+    │
     ▼
-LlmService.ListAllModelsAsync()
-    │
-    ├── Probe Ollama (localhost:11434)
-    │     ├── Try /api/tags → parse "models[].name"
-    │     └── Fallback /v1/models → parse "data[].id"
-    │
-    ├── Probe LlamaBarn (localhost:2276)
-    │     ├── Try /api/tags → parse "models[].name"
-    │     └── Fallback /v1/models → parse "data[].id"
-    │
-    ├── Both succeed → Green dot, "Ollama + LlamaBarn (N)"
-    ├── One succeeds → Green dot, "Backend (N)"
-    ├── None with models → Orange dot, "No models"
-    └── All fail → Red dot, "Error"
+User selects models from dropdowns
     │
     ▼
-User selects model from dropdown (shows backend label)
-    │
-    ▼
-LlmModel selected → routes to correct backend URL on next session
+Listen/Listen+Subtitle uses selected Whisper + LLM models
 ```
 
 ### Screenshot Pipeline
@@ -427,6 +513,7 @@ The live transcription pipeline is tuned for low-latency real-time use:
 | Optimization | Detail |
 |---|---|
 | **Voice Activity Detection** | Audio is transcribed on speech/silence boundaries instead of fixed intervals — Whisper only runs when someone actually spoke |
+| **Selectable Whisper model** | Choose between speed (Tiny) and accuracy (Large v3) based on your needs |
 | **Multi-threaded Whisper** | Uses `ProcessorCount / 2` threads for parallel inference across CPU cores |
 | **Greedy sampling** | Skips expensive beam search decoding in favor of fastest-path greedy decoding |
 | **No context reuse** | `WithNoContext()` prevents Whisper from reprocessing previous audio context each chunk |
@@ -457,4 +544,4 @@ The live transcription pipeline is tuned for low-latency real-time use:
 | Ollama | Local LLM inference server (port 11434) | `brew install ollama` |
 | LlamaBarn | Alternative LLM inference server (port 2276) | See LlamaBarn docs |
 | screencapture | macOS native screenshot utility | Pre-installed on macOS |
-| Whisper model (ggml-base.en.bin) | English speech recognition model | [HuggingFace](https://huggingface.co/ggerganov/whisper.cpp/tree/main) |
+| Whisper model (ggml) | Speech recognition model (selectable in-app) | In-app download or [HuggingFace](https://huggingface.co/ggerganov/whisper.cpp/tree/main) |
