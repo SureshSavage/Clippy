@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
@@ -32,50 +33,77 @@ public partial class MainWindow : Window
     private OllamaService? _ollamaService;
     private bool _isSubtitling;
 
-    private OllamaService _ollamaManager = new();
-    private string _selectedModel = "qwen3-4b-thinking";
+    private OllamaService _ollamaManager = new(baseUrl: "http://localhost:11434");
+    private string _selectedModel = "";
 
     public MainWindow()
     {
         InitializeComponent();
-        Opened += async (_, _) => await LoadModelsAsync();
+        Opened += OnWindowOpened;
+    }
+
+    private async void OnWindowOpened(object? sender, EventArgs e)
+    {
+        await LoadModelsAsync();
     }
 
     private async Task LoadModelsAsync()
     {
         ConnectionDot.Background = new SolidColorBrush(Colors.Gray);
         ConnectionLabel.Text = "Checking...";
+        ConnectionLabel.Foreground = new SolidColorBrush(Colors.Gray);
         RefreshButton.IsEnabled = false;
+        ModelDropdown.ItemsSource = null;
 
         try
         {
-            var models = await _ollamaManager.ListModelsAsync();
+            var models = await Task.Run(() => _ollamaManager.ListModelsAsync());
 
-            Dispatcher.UIThread.Post(() =>
+            if (models.Count == 0)
+            {
+                ConnectionDot.Background = new SolidColorBrush(Colors.Orange);
+                ConnectionLabel.Text = "No models";
+                ConnectionLabel.Foreground = new SolidColorBrush(Colors.Orange);
+                SetStatus("Ollama is running but has no models. Run: ollama pull <model-name>");
+            }
+            else
             {
                 ConnectionDot.Background = new SolidColorBrush(Colors.LimeGreen);
-                ConnectionLabel.Text = "Connected";
+                ConnectionLabel.Text = $"Connected ({models.Count})";
+                ConnectionLabel.Foreground = new SolidColorBrush(Colors.LimeGreen);
 
                 ModelDropdown.ItemsSource = models;
 
-                if (models.Count > 0)
-                {
-                    var idx = models.IndexOf(_selectedModel);
-                    ModelDropdown.SelectedIndex = idx >= 0 ? idx : 0;
-                }
+                var idx = models.IndexOf(_selectedModel);
+                ModelDropdown.SelectedIndex = idx >= 0 ? idx : 0;
 
-                RefreshButton.IsEnabled = true;
-            });
+                SetStatus($"Loaded {models.Count} model(s) from Ollama.");
+            }
         }
-        catch
+        catch (HttpRequestException)
         {
-            Dispatcher.UIThread.Post(() =>
-            {
-                ConnectionDot.Background = new SolidColorBrush(Colors.Red);
-                ConnectionLabel.Text = "Disconnected";
-                ModelDropdown.ItemsSource = null;
-                RefreshButton.IsEnabled = true;
-            });
+            ConnectionDot.Background = new SolidColorBrush(Colors.Red);
+            ConnectionLabel.Text = "Disconnected";
+            ConnectionLabel.Foreground = new SolidColorBrush(Colors.Red);
+            SetStatus("Cannot connect to Ollama at localhost:11434. Is Ollama running?");
+        }
+        catch (TaskCanceledException)
+        {
+            ConnectionDot.Background = new SolidColorBrush(Colors.Red);
+            ConnectionLabel.Text = "Timeout";
+            ConnectionLabel.Foreground = new SolidColorBrush(Colors.Red);
+            SetStatus("Connection to Ollama timed out.");
+        }
+        catch (Exception ex)
+        {
+            ConnectionDot.Background = new SolidColorBrush(Colors.Red);
+            ConnectionLabel.Text = "Error";
+            ConnectionLabel.Foreground = new SolidColorBrush(Colors.Red);
+            SetStatus($"Ollama error: {ex.Message}");
+        }
+        finally
+        {
+            RefreshButton.IsEnabled = true;
         }
     }
 
@@ -261,6 +289,12 @@ public partial class MainWindow : Window
         if (!File.Exists(ModelPath))
         {
             SetStatus("Whisper model not found. Downloading may still be in progress...");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(_selectedModel))
+        {
+            SetStatus("No model selected. Please select a model from the dropdown first.");
             return;
         }
 

@@ -46,6 +46,7 @@
                 <ComboBox x:Name="ModelDropdown"
                           MinWidth="200"
                           FontSize="13"
+                          PlaceholderText="No models loaded"
                           VerticalAlignment="Center"
                           SelectionChanged="OnModelSelectionChanged" />
 

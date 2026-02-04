@@ -15,7 +15,7 @@ public class OllamaService : IDisposable
 
     public string CurrentModel { get; set; }
 
-    public OllamaService(string model = "qwen3-4b-thinking", string baseUrl = "http://localhost:2276")
+    public OllamaService(string model = "qwen3-4b-thinking", string baseUrl = "http://localhost:11434")
     {
         CurrentModel = model;
         _baseUrl = baseUrl;
