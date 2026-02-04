@@ -24,43 +24,50 @@ A macOS desktop application that provides intelligent clipboard management, real
 |---------|-------------|
 | **Screenshot Capture** | Captures the screen using macOS native `screencapture` and saves to `~/Desktop/Clippy_Screenshots/` |
 | **Audio Recording & Transcription** | Records microphone input via ffmpeg, transcribes with OpenAI Whisper (ggml-base.en model) |
-| **Live Subtitling** | Continuous real-time transcription displayed as a draggable overlay at the bottom of the screen |
-| **Question Detection** | Automatically detects spoken questions using pattern matching (question marks and question-starting words) |
-| **AI-Powered Answers** | Routes detected questions to a local Ollama LLM and displays concise answers in a separate overlay |
-| **Model Selection** | Connects to Ollama on startup, shows connection status (green/red indicator), and lists all available models in a dropdown for switching |
+| **Live Subtitling** | Continuous real-time transcription displayed as a resizable, draggable overlay at the bottom of the screen |
+| **Voice Activity Detection** | Audio is transcribed based on speech/silence boundaries instead of fixed intervals — complete utterances are captured naturally |
+| **Question Detection** | Automatically detects spoken questions using two-tier pattern matching (start words + keywords anywhere in text) |
+| **Manual Ask Button** | An "Ask" button on the subtitle overlay lets users manually send the current transcript to the LLM if automatic detection missed a question |
+| **AI-Powered Answers** | Routes detected questions to a local LLM (Ollama or LlamaBarn) and displays concise answers in a separate overlay |
+| **Multi-Backend Support** | Probes both Ollama (port 11434) and LlamaBarn (port 2276) on startup, merging all models into a single dropdown |
+| **Model Selection** | Shows connection status (green/red/orange indicator) and lists all available models from all backends in a dropdown |
+| **Resizable Overlays** | Both overlay windows can be resized by dragging the grip in the bottom-right corner, with scrollable content |
 | **System Tray Integration** | Minimizes to the macOS menu bar with show/exit controls |
 | **Draggable Overlays** | Both subtitle and answer overlay windows can be repositioned via click-and-drag |
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                       MainWindow                         │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │  Model Status Bar                                  │  │
-│  │  [● Connected]  [ComboBox: model list]  [Refresh]  │  │
-│  └────────────────────────────────────────────────────┘  │
-│  (Orchestrates UI, buttons, model selection)              │
-├──────────┬──────────────────┬────────────────────────────┤
-│          │                  │                             │
-│  screencapture     LiveTranscriptionService     OllamaService
-│  (macOS native)    ┌───────────────────┐    (LLM API + model mgmt)
-│                    │  ffmpeg (audio)   │         │
-│                    │       ↓           │    ListModelsAsync()
-│                    │  Queue<float[]>   │    IsConnectedAsync()
-│                    │  (drain & merge)  │    AskAsync()
-│                    │       ↓           │         │
-│                    │  Whisper.net      │         │
-│                    │  (greedy, multi-  │         │
-│                    │   threaded)       │         │
-│                    │       ↓           │         │
-│                    │  Question detect  │─────────┘
-│                    └───────┬───────────┘
-│                            │
-│              ┌─────────────┴─────────────┐
+┌──────────────────────────────────────────────────────────────┐
+│                        MainWindow                            │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Model Status Bar                                      │  │
+│  │  [● Ollama + LlamaBarn (5)]  [ComboBox]  [Refresh]     │  │
+│  └────────────────────────────────────────────────────────┘  │
+│  (Orchestrates UI, buttons, model selection)                  │
+├──────────┬──────────────────┬────────────────────────────────┤
+│          │                  │                                 │
+│  screencapture     LiveTranscriptionService          LlmService
+│  (macOS native)    ┌───────────────────┐      (multi-backend client)
+│                    │  ffmpeg (audio)   │              │
+│                    │       ↓           │     Ollama (11434)
+│                    │  VadLoop (VAD)    │     LlamaBarn (2276)
+│                    │  (speech/silence) │              │
+│                    │       ↓           │    ListAllModelsAsync()
+│                    │  Queue<float[]>   │    AskAsync()
+│                    │       ↓           │              │
+│                    │  Whisper.net      │              │
+│                    │  (greedy, multi-  │              │
+│                    │   threaded)       │              │
+│                    │       ↓           │              │
+│                    │  Question detect  │──────────────┘
+│                    └───────┬───────────┘        ▲
+│                            │                    │
+│              ┌─────────────┴─────────────┐      │
 │    SubtitleOverlayWindow       AnswerOverlayWindow
-│    (live transcript text)      (Q&A display)
-└──────────────────────────────────────────────────────────┘
+│    (transcript + Ask btn)      (Q&A display)
+│    [resizable, scrollable]     [resizable, scrollable]
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## Technology Stack
@@ -73,8 +80,8 @@ A macOS desktop application that provides intelligent clipboard management, real
 | UI Theme | Avalonia Fluent Theme | 11.3.11 |
 | Speech-to-Text | Whisper.net (OpenAI Whisper) | 1.9.0 |
 | Audio Capture | ffmpeg (avfoundation) | System-installed |
-| LLM Backend | Ollama (OpenAI-compatible API) | External service |
-| LLM Model | Selectable via UI (default: qwen3-4b-thinking) | Configurable |
+| LLM Backends | Ollama + LlamaBarn (OpenAI-compatible API) | External services |
+| LLM Model | Selectable via UI from all backends | Configurable |
 | Screenshots | macOS `screencapture` | System utility |
 
 ## Project Structure
@@ -88,12 +95,12 @@ Clippy/
 ├── Program.cs                         # Entry point
 ├── MainWindow.axaml                   # Main window UI layout (model bar + buttons)
 ├── MainWindow.axaml.cs                # Main window logic (model mgmt, recording, subtitling)
-├── SubtitleOverlayWindow.axaml        # Subtitle overlay UI definition
-├── SubtitleOverlayWindow.axaml.cs     # Subtitle overlay logic (draggable, transparent)
-├── AnswerOverlayWindow.axaml          # Answer overlay UI definition
-├── AnswerOverlayWindow.axaml.cs       # Answer overlay logic (draggable, scrollable)
-├── LiveTranscriptionService.cs        # Real-time audio capture and transcription engine
-├── OllamaService.cs                   # LLM API client, model listing, connection status
+├── SubtitleOverlayWindow.axaml        # Subtitle overlay UI (resizable, scrollable, Ask button)
+├── SubtitleOverlayWindow.axaml.cs     # Subtitle overlay logic (drag, resize, ask callback)
+├── AnswerOverlayWindow.axaml          # Answer overlay UI (resizable, scrollable)
+├── AnswerOverlayWindow.axaml.cs       # Answer overlay logic (drag, resize)
+├── LiveTranscriptionService.cs        # VAD-based audio capture and transcription engine
+├── OllamaService.cs                   # Multi-backend LLM client (LlmService, LlmModel)
 ├── Clippy.csproj                      # Project file and NuGet dependencies
 └── README.md
 ```
@@ -106,7 +113,7 @@ Clippy/
   ```bash
   brew install ffmpeg
   ```
-- **Ollama** — Required for AI question-answering
+- **Ollama and/or LlamaBarn** — At least one LLM backend for question-answering
   ```bash
   brew install ollama
   ```
@@ -124,16 +131,23 @@ mkdir -p ~/.clippy/models
 # and place it at ~/.clippy/models/ggml-base.en.bin
 ```
 
-### 2. Set Up Ollama
+### 2. Set Up LLM Backend(s)
 
-Start Ollama on port 2276 and pull a model:
+Clippy auto-detects both backends on startup. Set up one or both:
 
+**Ollama (port 11434):**
 ```bash
-OLLAMA_HOST=0.0.0.0:2276 ollama serve
+ollama serve
 ollama pull qwen3-4b-thinking
 ```
 
-You can pull multiple models — they will all appear in the in-app dropdown:
+**LlamaBarn (port 2276):**
+```bash
+# Start LlamaBarn on its default port
+# Models served by LlamaBarn will appear in the dropdown automatically
+```
+
+You can pull multiple models — they will all appear in the in-app dropdown with their backend label:
 
 ```bash
 ollama pull llama3
@@ -169,11 +183,13 @@ Output artifacts:
 ## Usage
 
 ### Model Selection
-On startup, Clippy connects to the Ollama server and displays the connection status:
-- **Green dot** + "Connected" — Ollama is reachable; the dropdown is populated with all available models.
-- **Red dot** + "Disconnected" — Ollama is not running or unreachable; start Ollama and click **Refresh**.
+On startup, Clippy probes both Ollama (port 11434) and LlamaBarn (port 2276):
+- **Green dot** + "Ollama + LlamaBarn (5)" — Both backends reachable; all models listed in the dropdown with backend labels (e.g. `qwen3-4b-thinking [LlamaBarn]`).
+- **Green dot** + "Ollama (3)" — Only Ollama is reachable.
+- **Orange dot** + "No models" — Backends reachable but no models pulled.
+- **Red dot** + "Error" — No backends reachable; start a backend and click **Refresh**.
 
-Select any model from the dropdown before starting a Listen+Subtitle session. The selected model will be used for answering detected questions.
+Select any model from the dropdown before starting a Listen+Subtitle session.
 
 ### Clip-it (Screenshot)
 Click **Clip-it** to capture the screen. The window hides during capture to stay out of the screenshot. Images are saved to `~/Desktop/Clippy_Screenshots/` with timestamped filenames.
@@ -182,29 +198,32 @@ Click **Clip-it** to capture the screen. The window hides during capture to stay
 Click **Listen** to start recording from the default microphone. Click again to stop. The recorded audio is transcribed using Whisper and the transcript is saved to `~/Desktop/Clippy_Transcripts/`.
 
 ### Listen+Subtitle (Live Transcription)
-Click **Listen+Subtitle** to enable continuous real-time transcription. A subtitle overlay appears at the bottom of the screen showing the last 3 lines of recognized speech. If a question is detected, it is automatically sent to the selected Ollama model and the answer is displayed in a separate overlay below the subtitles. Click again to stop.
+Click **Listen+Subtitle** to enable continuous real-time transcription. A subtitle overlay appears at the bottom of the screen showing the last 3 lines of recognized speech. Audio is processed using voice activity detection — transcription happens when a pause in speech is detected, giving complete natural utterances.
+
+If a question is detected, it is automatically sent to the selected model and the answer appears in the blue overlay below. If automatic detection missed a question, click the **Ask** button on the subtitle overlay to manually send the current text.
+
+Both overlays can be **dragged** anywhere on screen and **resized** by dragging the grip in the bottom-right corner. Content scrolls when it overflows.
 
 ### Hide to Menu Bar
 Click **Hide to Menu Bar** to minimize the application to the system tray. Right-click or click the tray icon to show the window again or exit.
 
 ## Configuration
 
-### Ollama Service
+### LLM Service
 
-The LLM connection is configured in `OllamaService.cs`:
+The multi-backend LLM client is configured in `OllamaService.cs`:
+
+**Backends (probed automatically):**
+| Backend | URL | Model Listing | Chat API |
+|---------|-----|---------------|----------|
+| Ollama | `http://localhost:11434` | `/api/tags` then `/v1/models` | `/v1/chat/completions` |
+| LlamaBarn | `http://localhost:2276` | `/api/tags` then `/v1/models` | `/v1/chat/completions` |
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `_baseUrl` | `http://localhost:2276` | Ollama API endpoint |
-| `CurrentModel` | `qwen3-4b-thinking` | LLM model name (changeable via UI dropdown) |
-| Timeout | 60 seconds | HTTP request timeout |
+| List timeout | 10 seconds | Timeout for model listing requests |
+| Inference timeout | 120 seconds | Timeout for question-answering requests |
 | Prompt | `"Answer this question concisely in 1-2 sentences:\n\n{question}"` | System prompt for answers |
-
-**API endpoints used:**
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/tags` | GET | List all available models for the dropdown |
-| `/v1/chat/completions` | POST | Send questions and receive answers (OpenAI-compatible) |
 
 ### Whisper Model
 
@@ -219,17 +238,24 @@ The LLM connection is configured in `OllamaService.cs`:
 | Context reuse | Disabled (`WithNoContext`) |
 | Segment mode | Single segment (`WithSingleSegment`) |
 
-### Audio Recording (ffmpeg)
+### Voice Activity Detection (VAD)
 
-| Parameter | Value |
-|-----------|-------|
-| Input | macOS avfoundation `:default` (default mic) |
-| Format | PCM signed 16-bit little-endian (`s16le`) |
-| Sample rate | 16000 Hz |
-| Channels | 1 (mono) |
-| Chunk interval | 1500 ms |
-| Probe size | 32 bytes (minimal startup delay) |
-| Analyze duration | 0 (no initial analysis delay) |
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| Frame size | 100ms (1600 samples) | Small frames for responsive speech detection |
+| Silence threshold | 0.015 RMS | Energy below this is considered silence |
+| Silence trigger | 600ms (6 frames) | Duration of silence after speech to trigger transcription |
+| Min speech | 300ms (3 frames) | Minimum speech duration to avoid noise bursts |
+| Max speech | 15 seconds | Safety cap to flush very long utterances |
+
+### Question Detection
+
+Two-tier pattern matching with `HashSet<string>` (O(1) case-insensitive lookups):
+
+| Tier | Words | Match Rule |
+|------|-------|------------|
+| **Start words** | what, why, how, when, where, who, which, is, are, do, does, can, could, would, should, will, shall, has, have, did, was, were, explain, explains, describe, define, tell | Must be the **first word** |
+| **Keywords** | explain, explains, example, using, difference, how, what, compare, between, meaning, tell, me | Can appear **anywhere** in the text |
 
 ## Components
 
@@ -238,10 +264,10 @@ The LLM connection is configured in `OllamaService.cs`:
 The primary UI controller (600x420). Orchestrates all features — model management, screenshot capture, audio recording, live subtitling — and manages the lifecycle of overlay windows and services.
 
 **Model Status Bar:**
-- **Connection indicator** — Green/red dot showing Ollama connectivity
-- **Connection label** — "Connected", "Disconnected", or "Checking..."
-- **Model dropdown** — ComboBox populated with all available Ollama models
-- **Refresh button** — Re-queries Ollama for the latest model list
+- **Connection indicator** — Green/orange/red dot showing backend connectivity
+- **Connection label** — Lists connected backends and model count
+- **Model dropdown** — ComboBox showing all models with backend labels (e.g. `model-name [Ollama]`)
+- **Refresh button** — Re-probes all backends for the latest model list
 
 **Buttons:**
 - **Clip-it** — Screenshot capture
@@ -251,49 +277,63 @@ The primary UI controller (600x420). Orchestrates all features — model managem
 
 ### LiveTranscriptionService
 
-The real-time audio processing engine. Runs two background threads:
+The VAD-based real-time audio processing engine. Runs two background threads:
 
-1. **ReadAudioLoop** — Continuously reads raw PCM bytes from ffmpeg's stdout and converts them to `float[]` audio samples, pushing them into a thread-safe queue.
-2. **TranscribeLoop** — Drains all pending audio chunks from the queue (merging them if multiple have accumulated), runs them through the Whisper model, and checks for questions.
+1. **VadLoop** — Reads 100ms audio frames from ffmpeg, calculates RMS energy to detect speech vs. silence. Accumulates audio during speech, then flushes to the transcription queue when 600ms of silence is detected after speech.
+2. **TranscribeLoop** — Drains all pending speech segments from the queue (merging if multiple accumulated), runs them through Whisper, and checks for questions.
 
-**Performance characteristics:**
-- 1.5-second chunk interval for low-latency transcription
-- Queue drain-and-merge prevents stale audio from piling up
-- 100ms poll interval for responsive chunk pickup
-- Multi-threaded Whisper inference with greedy decoding
+**How VAD works:**
+```
+Microphone → ffmpeg → 100ms frames → RMS energy check
+                                         │
+                        ┌────────────────┴────────────────┐
+                    Speech (RMS ≥ 0.015)           Silence (RMS < 0.015)
+                        │                                  │
+                   Accumulate frames              Was there prior speech?
+                        │                            Yes → count silent frames
+                   Hit 15s cap? → Flush              ≥ 600ms silence? → Flush to Whisper
+```
 
 **Question detection** triggers on:
-- Text ending with `?`
-- Text starting with any of: *what, why, how, when, where, who, which, is, are, do, does, can, could, would, should, will, shall, has, have, did, was, were*
-- Uses a `HashSet` with case-insensitive comparison for O(1) lookups
+- Text containing `?`
+- Text starting with a question/command word (what, explain, tell, etc.)
+- Text containing a question keyword anywhere (difference, example, using, etc.)
 
-### OllamaService
+### LlmService
 
-HTTP client for the Ollama LLM API. Provides model management and question answering.
+Multi-backend HTTP client for LLM inference. Probes both Ollama and LlamaBarn, aggregating models from all reachable backends.
 
 **Capabilities:**
-- `ListModelsAsync()` — Fetches all available models from `GET /api/tags`
-- `IsConnectedAsync()` — Health check (returns true/false)
-- `AskAsync()` — Sends questions via `POST /v1/chat/completions` (OpenAI-compatible)
-- `CurrentModel` — Settable property for switching models at runtime
+- `ListAllModelsAsync()` — Probes all backends, tries `/api/tags` then falls back to `/v1/models`
+- `AskAsync()` — Routes questions to the correct backend URL based on the selected model
+- `SelectedModel` — `LlmModel` record containing name, backend label, and base URL
 - Supports request cancellation so new questions cancel pending requests
 
-**Request format:**
-```json
-{
-  "model": "<selected-model>",
-  "messages": [{ "role": "user", "content": "Answer this question concisely..." }],
-  "stream": false
-}
+**Data model:**
+```csharp
+record LlmModel(string Name, string Backend, string BaseUrl)
+// Example: LlmModel("qwen3-4b-thinking", "LlamaBarn", "http://localhost:2276")
+// Displays as: "qwen3-4b-thinking  [LlamaBarn]"
 ```
 
 ### SubtitleOverlayWindow
 
-Borderless, transparent, always-on-top window (800x120) positioned at the bottom-center of the screen. Displays rolling transcription text in 22pt white semi-bold font on a semi-transparent black background (`#CC000000`). Supports drag-to-reposition.
+Borderless, transparent, always-on-top overlay (default 800x120, min 300x80). Displays rolling transcription text in 22pt white semi-bold font on a semi-transparent black background (`#CC000000`).
+
+**Features:**
+- **Drag to move** — Click and drag anywhere on the overlay body
+- **Resize** — Drag the grip lines in the bottom-right corner
+- **Scrollable** — Content scrolls vertically when text overflows
+- **Ask button** — Manually sends the current transcript text to the selected LLM model for an answer
 
 ### AnswerOverlayWindow
 
-Borderless, transparent, always-on-top window (800x140) positioned directly below the subtitle overlay. Displays detected questions and AI-generated answers in a scrollable view on a semi-transparent dark blue background (`#CC1A237E`). Supports drag-to-reposition.
+Borderless, transparent, always-on-top overlay (default 800x140, min 300x80). Displays detected questions and AI-generated answers on a semi-transparent dark blue background (`#CC1A237E`).
+
+**Features:**
+- **Drag to move** — Click and drag anywhere on the overlay body
+- **Resize** — Drag the grip lines in the bottom-right corner
+- **Scrollable** — Content scrolls vertically for long answers
 
 ### App
 
@@ -310,7 +350,11 @@ Microphone
 ffmpeg (avfoundation, 16kHz mono PCM s16le, zero-delay probe)
     │
     ▼
-ReadAudioLoop (1.5s chunks, byte[] → float[] conversion)
+VadLoop (100ms frames, RMS energy → speech/silence detection)
+    │
+    ├── Speech detected → accumulate in buffer
+    │
+    ├── 600ms silence after speech → flush buffer to queue
     │
     ▼
 Thread-safe Queue<float[]> (drain & merge on dequeue)
@@ -318,13 +362,13 @@ Thread-safe Queue<float[]> (drain & merge on dequeue)
     ▼
 TranscribeLoop (Whisper.net — greedy, multi-threaded, no-context)
     │
-    ├──► SubtitleOverlayWindow (rolling 3-line display)
+    ├──► SubtitleOverlayWindow (rolling 3-line display + Ask button)
+    │                                          │
+    ▼                                          │ (manual ask)
+Question Detection (two-tier HashSet matching) ◄┘
     │
     ▼
-Question Detection (HashSet pattern matching)
-    │
-    ▼
-OllamaService.AskAsync() → Ollama API (selected model)
+LlmService.AskAsync() → correct backend (Ollama or LlamaBarn)
     │
     ▼
 AnswerOverlayWindow (Q&A display)
@@ -336,17 +380,26 @@ AnswerOverlayWindow (Q&A display)
 App startup / Refresh button click
     │
     ▼
-OllamaService.ListModelsAsync() → GET /api/tags
+LlmService.ListAllModelsAsync()
     │
-    ├── Success → Green dot, populate ComboBox dropdown
+    ├── Probe Ollama (localhost:11434)
+    │     ├── Try /api/tags → parse "models[].name"
+    │     └── Fallback /v1/models → parse "data[].id"
     │
-    └── Failure → Red dot, "Disconnected" label
+    ├── Probe LlamaBarn (localhost:2276)
+    │     ├── Try /api/tags → parse "models[].name"
+    │     └── Fallback /v1/models → parse "data[].id"
+    │
+    ├── Both succeed → Green dot, "Ollama + LlamaBarn (N)"
+    ├── One succeeds → Green dot, "Backend (N)"
+    ├── None with models → Orange dot, "No models"
+    └── All fail → Red dot, "Error"
     │
     ▼
-User selects model from dropdown
+User selects model from dropdown (shows backend label)
     │
     ▼
-_selectedModel updated → used by next Listen+Subtitle session
+LlmModel selected → routes to correct backend URL on next session
 ```
 
 ### Screenshot Pipeline
@@ -373,15 +426,16 @@ The live transcription pipeline is tuned for low-latency real-time use:
 
 | Optimization | Detail |
 |---|---|
-| **1.5s chunk interval** | Audio is processed in 1.5-second windows instead of 3 seconds, halving perceived latency |
+| **Voice Activity Detection** | Audio is transcribed on speech/silence boundaries instead of fixed intervals — Whisper only runs when someone actually spoke |
 | **Multi-threaded Whisper** | Uses `ProcessorCount / 2` threads for parallel inference across CPU cores |
 | **Greedy sampling** | Skips expensive beam search decoding in favor of fastest-path greedy decoding |
 | **No context reuse** | `WithNoContext()` prevents Whisper from reprocessing previous audio context each chunk |
 | **Single segment mode** | `WithSingleSegment()` returns results immediately without waiting for segment boundaries |
 | **Zero-delay ffmpeg startup** | `-probesize 32 -analyzeduration 0` eliminates ffmpeg's initial stream analysis delay |
-| **Queue drain & merge** | When transcription falls behind, all pending chunks are merged into one instead of processing stale audio sequentially |
-| **100ms poll interval** | Reduced from 500ms for faster chunk pickup between transcription cycles |
-| **HashSet question lookup** | O(1) case-insensitive word matching instead of linear array search |
+| **Queue drain & merge** | When transcription falls behind, all pending speech segments are merged into one |
+| **100ms poll interval** | Fast chunk pickup between transcription cycles |
+| **HashSet question lookup** | O(1) case-insensitive word matching with two-tier detection |
+| **Persistent inference client** | Reuses a single `HttpClient` for all LLM requests instead of creating one per call |
 
 ## Dependencies
 
@@ -400,6 +454,7 @@ The live transcription pipeline is tuned for low-latency real-time use:
 | Dependency | Purpose | Install |
 |------------|---------|---------|
 | ffmpeg | Audio recording and format conversion | `brew install ffmpeg` |
-| Ollama | Local LLM inference server | `brew install ollama` |
+| Ollama | Local LLM inference server (port 11434) | `brew install ollama` |
+| LlamaBarn | Alternative LLM inference server (port 2276) | See LlamaBarn docs |
 | screencapture | macOS native screenshot utility | Pre-installed on macOS |
 | Whisper model (ggml-base.en.bin) | English speech recognition model | [HuggingFace](https://huggingface.co/ggerganov/whisper.cpp/tree/main) |

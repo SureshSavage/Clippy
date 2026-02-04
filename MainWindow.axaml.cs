@@ -20,7 +20,7 @@ public partial class MainWindow : Window
     private static readonly string OutputDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Clippy_Transcripts");
 
-    private static readonly string ModelPath =
+    private static readonly string DefaultModelPath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".clippy", "models", "ggml-base.en.bin");
 
     private Process? _ffmpegProcess;
@@ -36,6 +36,10 @@ public partial class MainWindow : Window
     private readonly LlmService _llmManager = new();
     private List<LlmModel> _availableModels = new();
 
+    private readonly WhisperModelManager _whisperModelManager = new();
+    private List<WhisperModelInfo> _whisperModels = new();
+    private CancellationTokenSource? _downloadCts;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -44,6 +48,7 @@ public partial class MainWindow : Window
 
     private async void OnWindowOpened(object? sender, EventArgs e)
     {
+        LoadWhisperModels();
         await LoadModelsAsync();
     }
 
@@ -116,6 +121,79 @@ public partial class MainWindow : Window
         await LoadModelsAsync();
     }
 
+    private void LoadWhisperModels()
+    {
+        _whisperModels = _whisperModelManager.GetAvailableModels();
+        WhisperModelDropdown.ItemsSource = _whisperModels;
+
+        // Select the first installed model, or the first one overall
+        var installed = _whisperModels.FindIndex(m => m.IsInstalled);
+        WhisperModelDropdown.SelectedIndex = installed >= 0 ? installed : (_whisperModels.Count > 0 ? 0 : -1);
+    }
+
+    private void OnWhisperModelSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (WhisperModelDropdown.SelectedItem is WhisperModelInfo model)
+        {
+            DownloadWhisperButton.IsEnabled = !model.IsInstalled;
+            DownloadWhisperButton.Content = model.IsInstalled ? "Installed" : "Download";
+        }
+    }
+
+    private async void OnDownloadWhisperClicked(object? sender, RoutedEventArgs e)
+    {
+        if (WhisperModelDropdown.SelectedItem is not WhisperModelInfo model)
+            return;
+
+        if (model.IsInstalled)
+        {
+            SetStatus("Model already installed.");
+            return;
+        }
+
+        DownloadWhisperButton.IsEnabled = false;
+        DownloadWhisperButton.Content = "0%";
+        SetStatus($"Downloading {model.Name}...");
+
+        _downloadCts = new CancellationTokenSource();
+
+        try
+        {
+            await _whisperModelManager.DownloadModelAsync(
+                model,
+                percent => Dispatcher.UIThread.Post(() =>
+                {
+                    DownloadWhisperButton.Content = $"{percent}%";
+                }),
+                _downloadCts.Token);
+
+            SetStatus($"Downloaded {model.Name} successfully.");
+            LoadWhisperModels();
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus("Download cancelled.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Download failed: {ex.Message}");
+        }
+        finally
+        {
+            DownloadWhisperButton.IsEnabled = true;
+            DownloadWhisperButton.Content = "Download";
+            _downloadCts?.Dispose();
+            _downloadCts = null;
+        }
+    }
+
+    private string GetSelectedWhisperModelPath()
+    {
+        if (WhisperModelDropdown.SelectedItem is WhisperModelInfo model && model.IsInstalled)
+            return model.FilePath;
+        return DefaultModelPath;
+    }
+
     private void OnHideClicked(object? sender, RoutedEventArgs e)
     {
         HideToTrayRequested?.Invoke();
@@ -159,9 +237,10 @@ public partial class MainWindow : Window
 
     private void StartRecording()
     {
-        if (!File.Exists(ModelPath))
+        var whisperPath = GetSelectedWhisperModelPath();
+        if (!File.Exists(whisperPath))
         {
-            SetStatus("Whisper model not found. Downloading may still be in progress...");
+            SetStatus("Whisper model not found. Select an installed model or download one.");
             return;
         }
 
@@ -232,7 +311,8 @@ public partial class MainWindow : Window
 
         try
         {
-            var text = await Task.Run(() => TranscribeAudio(recordingPath));
+            var modelPath = GetSelectedWhisperModelPath();
+            var text = await Task.Run(() => TranscribeAudio(recordingPath, modelPath));
 
             if (!string.IsNullOrWhiteSpace(text))
             {
@@ -252,9 +332,9 @@ public partial class MainWindow : Window
         ListenButton.IsEnabled = true;
     }
 
-    private static async Task<string> TranscribeAudio(string wavPath)
+    private static async Task<string> TranscribeAudio(string wavPath, string modelPath)
     {
-        using var factory = WhisperFactory.FromPath(ModelPath);
+        using var factory = WhisperFactory.FromPath(modelPath);
         using var processor = factory.CreateBuilder().WithLanguage("en").Build();
 
         using var fileStream = File.OpenRead(wavPath);
@@ -282,16 +362,17 @@ public partial class MainWindow : Window
 
     private void StartSubtitling()
     {
-        if (!File.Exists(ModelPath))
+        var whisperPath = GetSelectedWhisperModelPath();
+        if (!File.Exists(whisperPath))
         {
-            SetStatus("Whisper model not found. Downloading may still be in progress...");
+            SetStatus("Whisper model not found. Select an installed model or download one.");
             return;
         }
 
         var selected = GetSelectedModel();
         if (selected == null)
         {
-            SetStatus("No model selected. Please select a model from the dropdown first.");
+            SetStatus("No LLM model selected. Please select a model from the dropdown first.");
             return;
         }
 
@@ -307,7 +388,7 @@ public partial class MainWindow : Window
         _llmService = new LlmService { SelectedModel = selected };
 
         _liveTranscription = new LiveTranscriptionService(
-            ModelPath,
+            whisperPath,
             text => _subtitleOverlay.UpdateSubtitle(text),
             onQuestionDetected: OnQuestionDetected,
             chunkIntervalMs: 1500
