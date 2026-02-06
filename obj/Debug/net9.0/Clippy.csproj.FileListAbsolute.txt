@@ -111,3 +111,4 @@
 /Users/sugunasavage/clippy/Clippy/bin/Debug/net9.0/Whisper.net.dll
 /Users/sugunasavage/clippy/Clippy/bin/Debug/net9.0/runtimes/browser/lib/net8.0/System.Text.Encodings.Web.dll
 /Users/sugunasavage/clippy/Clippy/bin/Debug/net9.0/runtimes/win/lib/net9.0/System.Text.Encodings.Web.dll
+/Users/sugunasavage/clippy/Clippy/obj/Debug/net9.0/Clippy.sourcelink.json

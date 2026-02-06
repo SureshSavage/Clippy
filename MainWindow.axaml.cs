@@ -390,6 +390,7 @@ public partial class MainWindow : Window
 
         _answerOverlay = new AnswerOverlayWindow();
         _answerOverlay.OnCloseRequested = () => _ = StopSubtitling();
+        _answerOverlay.SetModelLabel(selected.DisplayName);
         _answerOverlay.Show();
         _answerOverlay.PositionBelowSubtitle(_subtitleOverlay);
 

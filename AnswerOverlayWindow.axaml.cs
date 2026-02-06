@@ -99,6 +99,11 @@ public partial class AnswerOverlayWindow : Window
         );
     }
 
+    public void SetModelLabel(string modelName)
+    {
+        ModelLabel.Text = $"Model: {modelName}";
+    }
+
     public void UpdateAnswer(string text)
     {
         Dispatcher.UIThread.Post(() =>

@@ -506,6 +506,182 @@ Save to ~/Desktop/Clippy_Screenshots/clip_YYYYMMDD_HHmmss.png
 MainWindow shows, status updated
 ```
 
+## Technical Deep Dive
+
+### Audio Processing Algorithm (VadLoop)
+
+The VadLoop thread reads raw PCM audio from ffmpeg's stdout in 100ms frames and classifies each frame as speech or silence using RMS energy:
+
+```
+1. Read 3200 bytes from ffmpeg stdout (100ms at 16kHz mono, 16-bit PCM = 1600 samples × 2 bytes)
+2. Convert byte pairs to float samples: sample = (short)(byte[i] | byte[i+1] << 8) / 32768.0
+3. Calculate frame RMS energy:
+       RMS = sqrt( sum(sample²) / sampleCount )
+4. Classify frame:
+       RMS ≥ 0.015  →  SPEECH
+       RMS < 0.015  →  SILENCE
+5. State machine:
+       SPEECH detected:
+           - Append frame's float samples to speech buffer
+           - Reset silence counter
+           - If total buffered speech ≥ 15 seconds → force flush to queue (safety cap)
+       SILENCE detected after speech:
+           - Increment silence frame counter
+           - If silence frames ≥ 6 (600ms) AND speech frames ≥ 3 (300ms):
+               → Copy speech buffer into float[] and enqueue
+               → Signal TranscribeLoop via AutoResetEvent
+               → Reset speech buffer and counters
+       SILENCE detected with no prior speech:
+           - Ignored (ambient noise / quiet room)
+6. Loop back to step 1
+```
+
+### Whisper Transcription Engine (TranscribeLoop)
+
+The TranscribeLoop runs on a separate thread and processes speech segments from the VAD queue:
+
+```
+1. Wait on AutoResetEvent with 100ms timeout
+2. Lock the queue and drain ALL pending float[] segments
+3. If no segments → loop back to step 1
+4. Merge all drained segments into a single contiguous float[] buffer
+   (handles backpressure — if VAD produces faster than Whisper consumes,
+    multiple utterances are merged into one inference call)
+5. Create WhisperProcessor with current model:
+       - Language: "en"
+       - Threads: Environment.ProcessorCount / 2
+       - SamplingStrategy: GreedySamplingStrategy()
+       - WithNoContext() — no cross-chunk context reuse
+       - WithSingleSegment() — return result immediately
+6. Run processor.ProcessAsync(mergedBuffer)
+7. Concatenate all returned segment texts
+8. Dispatch to UI thread: update SubtitleOverlayWindow with rolling 3-line display
+9. Run question detection on the transcribed text
+10. If question detected → invoke OnQuestionDetected callback
+11. Loop back to step 1
+```
+
+### Question Detection Algorithm
+
+Two-tier `HashSet<string>` matching with `StringComparer.OrdinalIgnoreCase` for O(1) lookups:
+
+```
+Input: transcribed text string
+
+Step 1 — Punctuation check:
+    If text contains '?' → return TRUE
+
+Step 2 — Normalize:
+    Split text into words on whitespace
+
+Step 3 — Start-word check:
+    If words[0] is in StartWordsSet → return TRUE
+    StartWordsSet = { what, why, how, when, where, who, which,
+                      is, are, do, does, can, could, would, should,
+                      will, shall, has, have, did, was, were,
+                      explain, explains, describe, define, tell }
+
+Step 4 — Keyword-anywhere check:
+    For each word in text:
+        If word is in KeywordsSet → return TRUE
+    KeywordsSet = { explain, explains, example, using, difference,
+                    how, what, compare, between, meaning, tell, me }
+
+Step 5 — No match:
+    return FALSE
+```
+
+### LLM Request Lifecycle
+
+```
+1. Cancel any in-flight request:
+       - Dispose previous CancellationTokenSource
+       - Create new linked CancellationTokenSource
+2. Build request payload:
+       {
+         "model": selectedModel.Name,
+         "messages": [
+           { "role": "system", "content": contextText },           // only if context provided
+           { "role": "user",   "content": "Answer this question concisely in 1-2 sentences:\n\n{question}" }
+         ]
+       }
+3. POST to {selectedModel.BaseUrl}/v1/chat/completions
+       - Content-Type: application/json
+       - Timeout: 120 seconds
+4. Parse JSON response:
+       Extract choices[0].message.content
+5. Return answer string to caller
+6. Caller updates AnswerOverlayWindow via Dispatcher.UIThread
+```
+
+### Concurrency Model
+
+Clippy uses a multi-threaded architecture with explicit synchronization:
+
+| Thread | Role | Synchronization |
+|--------|------|-----------------|
+| **UI Thread** | Avalonia dispatcher, all UI updates | `Dispatcher.UIThread.InvokeAsync()` |
+| **VadLoop Thread** | Reads ffmpeg stdout, runs VAD, enqueues speech | `lock(_queueLock)` on shared `Queue<float[]>` |
+| **TranscribeLoop Thread** | Dequeues speech, runs Whisper, detects questions | `lock(_queueLock)` + `AutoResetEvent` signaling |
+| **Task Pool** | LLM requests (`AskAsync`), model downloads | `CancellationTokenSource` for request cancellation |
+
+**Key synchronization primitives:**
+- `lock(_queueLock)` — Protects `Queue<float[]>` between VadLoop (producer) and TranscribeLoop (consumer)
+- `AutoResetEvent` — Signals TranscribeLoop when new speech data is available, with 100ms poll fallback
+- `CancellationTokenSource` — Linked tokens allow cancelling a previous LLM request when a new question arrives
+- `Dispatcher.UIThread.InvokeAsync()` — Marshals all UI updates (subtitle text, answer text, status labels) from background threads to the Avalonia UI thread
+
+### ffmpeg Command Parameters
+
+**Live streaming (Listen+Subtitle):**
+```bash
+ffmpeg -f avfoundation -i ":default" -ar 16000 -ac 1 -f s16le -probesize 32 -analyzeduration 0 pipe:1
+```
+
+| Flag | Purpose |
+|------|---------|
+| `-f avfoundation` | macOS audio/video capture framework |
+| `-i ":default"` | Default microphone (colon prefix = audio-only) |
+| `-ar 16000` | 16 kHz sample rate (required by Whisper) |
+| `-ac 1` | Mono channel |
+| `-f s16le` | Raw 16-bit signed little-endian PCM output |
+| `-probesize 32` | Minimal probe size — eliminates startup delay |
+| `-analyzeduration 0` | Skip stream analysis — zero-delay start |
+| `pipe:1` | Stream raw PCM to stdout (read by VadLoop) |
+
+**Single recording (Listen):**
+```bash
+ffmpeg -f avfoundation -i ":default" -ar 16000 -ac 1 {outputPath}.wav
+```
+
+Records to a WAV file. On stop, the ffmpeg process is killed and the WAV is passed to Whisper for batch transcription.
+
+### Error Handling & Reliability
+
+| Scenario | Handling |
+|----------|----------|
+| LLM backend unreachable | Graceful fallback — red/orange status dot, empty model list, no crash |
+| Both backends down | Red dot + "Error" label; user clicks Refresh after starting a backend |
+| Whisper model not installed | Download button shown; transcription buttons disabled until model selected |
+| ffmpeg not installed | Status label shows error; recording/subtitling fail gracefully |
+| LLM inference timeout | 120-second timeout; request cancelled on new question |
+| Model download interrupted | Temporary `.downloading` file is left (not renamed); can retry |
+| Long utterance (>15s) | Safety cap forces flush to prevent unbounded memory growth |
+| Transcription backpressure | Queue drain merges all pending segments into one Whisper call |
+| Concurrent questions | Previous in-flight LLM request cancelled via CancellationToken |
+| UI updates from background | All UI mutations dispatched to Avalonia UI thread |
+
+### Known Limitations
+
+- **macOS only** — Depends on `screencapture`, `avfoundation`, and macOS `kill` command
+- **Local LLM only** — No cloud API support; requires Ollama or LlamaBarn running locally
+- **English-optimized** — Whisper language is hardcoded to `"en"`; VAD and question detection are English-only
+- **Single microphone** — Always uses the system default microphone (`:default`)
+- **No persistent settings** — Model selections, window positions, and font sizes reset on restart
+- **Memory usage** — Large Whisper models (Medium: 1.5 GB, Large: 2.9 GB) require significant RAM
+- **No GPU acceleration** — Whisper.net runs CPU-only inference; large models may be slow on older hardware
+- **Question detection heuristics** — Pattern-based detection may miss complex questions or trigger on non-questions; the manual Ask button compensates for this
+
 ## Performance Optimizations
 
 The live transcription pipeline is tuned for low-latency real-time use:

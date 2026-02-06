@@ -17,6 +17,16 @@
             Padding="24,12"
             Margin="8">
         <Grid RowDefinitions="Auto,*,Auto">
+            <!-- Top bar: model label + close button -->
+            <TextBlock x:Name="ModelLabel"
+                       Grid.Row="0"
+                       Text=""
+                       FontSize="10"
+                       Foreground="#80FFFFFF"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"
+                       Margin="0,-2,0,2" />
+
             <!-- Close button -->
             <Button Grid.Row="0"
                     Content="&#x2715;"
