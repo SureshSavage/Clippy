@@ -114,7 +114,7 @@ public partial class SubtitleOverlayWindow : Window
 
         Position = new Avalonia.PixelPoint(
             (int)(screenX + (screenWidth - Width) / 2 * scaling),
-            (int)(screenY + (screenHeight - Height - 40) * scaling)
+            (int)(screenY + (screenHeight - Height) / 2 * scaling)
         );
     }
 
