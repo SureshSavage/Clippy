@@ -438,6 +438,7 @@ public partial class MainWindow : Window
         _subtitleOverlay?.Close();
         _subtitleOverlay = null;
 
+        _answerOverlay?.StopSpeaking();
         _answerOverlay?.Close();
         _answerOverlay = null;
 
@@ -469,6 +470,11 @@ public partial class MainWindow : Window
                 if (!string.IsNullOrWhiteSpace(answer))
                 {
                     _answerOverlay?.UpdateAnswer($"Q: {question}\nA: {answer}");
+
+                    var readAloud = false;
+                    Dispatcher.UIThread.Invoke(() => readAloud = ReadAloudCheckBox.IsChecked == true);
+                    if (readAloud)
+                        _answerOverlay?.SpeakAnswer();
                 }
                 else
                 {

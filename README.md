@@ -32,6 +32,7 @@ A macOS desktop application that provides intelligent clipboard management, real
 | **Multi-Backend Support** | Probes both Ollama (port 11434) and LlamaBarn (port 2276) on startup, merging all models into a single dropdown |
 | **LLM Model Selection** | Shows connection status (green/red/orange indicator) and lists all available LLM models from all backends in a dropdown |
 | **Whisper Model Selection** | Dropdown listing all available Whisper ggml models (tiny through large-v3) with in-app download and size info |
+| **Text-to-Speech (Read Aloud)** | Answers can be read aloud using macOS built-in `say` command — auto-triggered via checkbox or manually via speaker button on the answer overlay |
 | **Resizable Overlays** | Both overlay windows can be resized by dragging the grip in the bottom-right corner, with scrollable content |
 | **System Tray Integration** | Minimizes to the macOS menu bar with show/exit controls |
 | **Draggable Overlays** | Both subtitle and answer overlay windows can be repositioned via click-and-drag |
@@ -93,6 +94,7 @@ WhisperModelManager
 | LLM Model | Selectable via UI from all backends | Configurable |
 | Whisper Model | Selectable via UI from installed ggml models | Configurable |
 | Screenshots | macOS `screencapture` | System utility |
+| Text-to-Speech | macOS `say` | System utility |
 
 ## Project Structure
 
@@ -240,6 +242,9 @@ If a question is detected, it is automatically sent to the selected LLM model an
 
 Both overlays can be **dragged** anywhere on screen and **resized** by dragging the grip in the bottom-right corner. Content scrolls when it overflows.
 
+### Read Aloud (Text-to-Speech)
+Check the **Read answers aloud** checkbox in the main window to have every LLM answer automatically spoken via the macOS `say` command. You can also click the **speaker button** on the answer overlay to manually re-read the current answer at any time. Starting a new answer automatically stops any in-progress speech.
+
 ### Hide to Menu Bar
 Click **Hide to Menu Bar** to minimize the application to the system tray. Right-click or click the tray icon to show the window again or exit.
 
@@ -316,6 +321,7 @@ The primary UI controller (600x490). Orchestrates all features — model managem
 - **Clip-it** — Screenshot capture
 - **Listen** — Toggle audio recording and transcription (uses selected Whisper model)
 - **Listen+Subtitle** — Toggle live transcription with overlays (uses selected Whisper and LLM models)
+- **Read answers aloud** — Checkbox to auto-speak LLM answers via macOS `say`
 - **Hide to Menu Bar** — Minimize to system tray
 
 ### WhisperModelManager
@@ -404,6 +410,7 @@ Borderless, transparent, always-on-top overlay (default 800x140, min 300x80). Di
 - **Drag to move** — Click and drag anywhere on the overlay body
 - **Resize** — Drag the grip lines in the bottom-right corner
 - **Scrollable** — Content scrolls vertically for long answers
+- **Speaker button** — Reads the current answer aloud using macOS `say`; kills any previous speech before starting
 
 ### App
 
@@ -720,4 +727,5 @@ The live transcription pipeline is tuned for low-latency real-time use:
 | Ollama | Local LLM inference server (port 11434) | `brew install ollama` |
 | LlamaBarn | Alternative LLM inference server (port 2276) | See LlamaBarn docs |
 | screencapture | macOS native screenshot utility | Pre-installed on macOS |
+| say | macOS text-to-speech for reading answers aloud | Pre-installed on macOS |
 | Whisper model (ggml) | Speech recognition model (selectable in-app) | In-app download or [HuggingFace](https://huggingface.co/ggerganov/whisper.cpp/tree/main) |

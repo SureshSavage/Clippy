@@ -111,6 +111,12 @@
             </StackPanel>
         </Border>
 
+        <!-- Read aloud toggle -->
+        <CheckBox x:Name="ReadAloudCheckBox"
+                  Content="Read answers aloud"
+                  FontSize="13"
+                  HorizontalAlignment="Center" />
+
         <StackPanel Orientation="Horizontal"
                     HorizontalAlignment="Center"
                     Spacing="12">

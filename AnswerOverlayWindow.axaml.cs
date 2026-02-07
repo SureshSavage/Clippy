@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -11,6 +12,7 @@ public partial class AnswerOverlayWindow : Window
     private Point _resizeStartPos;
     private double _resizeStartWidth;
     private double _resizeStartHeight;
+    private Process? _sayProcess;
 
     public Action? OnCloseRequested { get; set; }
 
@@ -110,5 +112,47 @@ public partial class AnswerOverlayWindow : Window
         {
             AnswerText.Text = text;
         });
+    }
+
+    private void OnSpeakClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        SpeakAnswer();
+    }
+
+    public void SpeakAnswer()
+    {
+        var text = AnswerText.Text ?? "";
+        // Extract just the answer portion after "A: "
+        var idx = text.IndexOf("A: ", StringComparison.Ordinal);
+        var answer = idx >= 0 ? text.Substring(idx + 3).Trim() : text.Trim();
+
+        if (string.IsNullOrWhiteSpace(answer) || answer == "Thinking..." || answer.StartsWith("Waiting"))
+            return;
+
+        StopSpeaking();
+
+        try
+        {
+            _sayProcess = Process.Start(new ProcessStartInfo
+            {
+                FileName = "say",
+                Arguments = $"\"{answer.Replace("\"", "\\\"")}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+        }
+        catch
+        {
+            // say command not available — ignore
+        }
+    }
+
+    public void StopSpeaking()
+    {
+        if (_sayProcess != null && !_sayProcess.HasExited)
+        {
+            try { _sayProcess.Kill(); } catch { }
+        }
+        _sayProcess = null;
     }
 }
