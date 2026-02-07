@@ -116,12 +116,11 @@ public partial class AnswerOverlayWindow : Window
 
     private void OnSpeakClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        SpeakAnswer();
+        SpeakAnswer(AnswerText.Text ?? "");
     }
 
-    public void SpeakAnswer()
+    public void SpeakAnswer(string text)
     {
-        var text = AnswerText.Text ?? "";
         // Extract just the answer portion after "A: "
         var idx = text.IndexOf("A: ", StringComparison.Ordinal);
         var answer = idx >= 0 ? text.Substring(idx + 3).Trim() : text.Trim();

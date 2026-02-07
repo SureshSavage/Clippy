@@ -469,12 +469,13 @@ public partial class MainWindow : Window
                 var answer = await _llmService.AskAsync(question, context);
                 if (!string.IsNullOrWhiteSpace(answer))
                 {
-                    _answerOverlay?.UpdateAnswer($"Q: {question}\nA: {answer}");
+                    var displayText = $"Q: {question}\nA: {answer}";
+                    _answerOverlay?.UpdateAnswer(displayText);
 
                     var readAloud = false;
                     Dispatcher.UIThread.Invoke(() => readAloud = ReadAloudCheckBox.IsChecked == true);
                     if (readAloud)
-                        _answerOverlay?.SpeakAnswer();
+                        _answerOverlay?.SpeakAnswer(displayText);
                 }
                 else
                 {
