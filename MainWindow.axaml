@@ -111,11 +111,18 @@
             </StackPanel>
         </Border>
 
-        <!-- Read aloud toggle -->
-        <CheckBox x:Name="ReadAloudCheckBox"
-                  Content="Read answers aloud"
-                  FontSize="13"
-                  HorizontalAlignment="Center" />
+        <!-- Toggles -->
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Center"
+                    Spacing="20">
+            <CheckBox x:Name="ReadAloudCheckBox"
+                      Content="Read answers aloud"
+                      FontSize="13" />
+            <CheckBox x:Name="ContinuousCameraCheckBox"
+                      Content="Continuous camera"
+                      FontSize="13"
+                      ToolTip.Tip="When checked, camera analyzes frames every 5 seconds. When unchecked, use Snap button only." />
+        </StackPanel>
 
         <StackPanel Orientation="Horizontal"
                     HorizontalAlignment="Center"
@@ -137,6 +144,12 @@
                     Padding="20,10"
                     FontSize="16"
                     Click="OnSubtitleClicked" />
+
+            <Button x:Name="CameraButton"
+                    Content="Camera"
+                    Padding="20,10"
+                    FontSize="16"
+                    Click="OnCameraClicked" />
 
             <Button Content="Hide to Menu Bar"
                     Padding="20,10"

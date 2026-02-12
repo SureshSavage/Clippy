@@ -1,6 +1,6 @@
 # Clippy
 
-A macOS desktop application that provides intelligent clipboard management, real-time audio transcription with live subtitles, and AI-powered question answering — all accessible from the system tray.
+A macOS desktop application that provides intelligent clipboard management, real-time audio transcription with live subtitles, AI-powered question answering, vision-powered screenshot analysis, and live camera analysis — all accessible from the system tray.
 
 ## Table of Contents
 
@@ -22,7 +22,7 @@ A macOS desktop application that provides intelligent clipboard management, real
 
 | Feature | Description |
 |---------|-------------|
-| **Screenshot Capture** | Captures the screen using macOS native `screencapture` and saves to `~/Desktop/Clippy_Screenshots/` |
+| **Screenshot Capture & Vision Analysis** | Captures the screen using macOS native `screencapture`, saves to `~/Desktop/Clippy_Screenshots/`, and sends the image to a vision-capable LLM for AI-powered description displayed in a purple overlay with image preview |
 | **Audio Recording & Transcription** | Records microphone input via ffmpeg, transcribes with OpenAI Whisper (selectable model) |
 | **Live Subtitling** | Continuous real-time transcription displayed as a resizable, draggable overlay at the bottom of the screen |
 | **Voice Activity Detection** | Audio is transcribed based on speech/silence boundaries instead of fixed intervals — complete utterances are captured naturally |
@@ -35,7 +35,14 @@ A macOS desktop application that provides intelligent clipboard management, real
 | **Text-to-Speech (Read Aloud)** | Answers can be read aloud using macOS built-in `say` command — auto-triggered via checkbox or manually via speaker button on the answer overlay |
 | **Resizable Overlays** | Both overlay windows can be resized by dragging the grip in the bottom-right corner, with scrollable content |
 | **System Tray Integration** | Minimizes to the macOS menu bar with show/exit controls |
-| **Draggable Overlays** | Both subtitle and answer overlay windows can be repositioned via click-and-drag |
+| **Camera Vision Analysis** | Live camera feed captures frames at configurable intervals and sends them to a vision LLM for real-time scene description, displayed in a green overlay with frame preview |
+| **Camera Snap Mode** | On-demand single-frame capture and analysis via the Snap button — no continuous capture needed |
+| **Continuous Camera Toggle** | Checkbox to switch between continuous frame analysis (every 5 seconds) and snap-only mode |
+| **Vision API Support** | LLM service supports OpenAI-compatible vision API with base64-encoded image payloads for multimodal models |
+| **LLM Context Input** | Text area to provide custom context (e.g. "This is a C# lecture about async/await") that gets sent as a system message with every LLM question |
+| **Font Size Controls** | Adjustable font size (abc--/ABC++ buttons) on camera and screenshot overlay windows |
+| **Close Buttons on Overlays** | All overlay windows include a close button to stop and dismiss the overlay |
+| **Draggable Overlays** | All overlay windows (subtitle, answer, camera, screenshot) can be repositioned via click-and-drag |
 
 ## Architecture
 
@@ -49,29 +56,31 @@ A macOS desktop application that provides intelligent clipboard management, real
 │  │  Whisper Model Bar                                      │  │
 │  │  [Whisper:]  [ComboBox ▾ Base (English)]  [Download]    │  │
 │  └────────────────────────────────────────────────────────┘  │
-│  (Orchestrates UI, buttons, model selection)                  │
-├──────────┬──────────────────┬────────────────────────────────┤
-│          │                  │                                 │
-│  screencapture     LiveTranscriptionService          LlmService
-│  (macOS native)    ┌───────────────────┐      (multi-backend client)
-│                    │  ffmpeg (audio)   │              │
-│                    │       ↓           │     Ollama (11434)
-│                    │  VadLoop (VAD)    │     LlamaBarn (2276)
-│                    │  (speech/silence) │              │
-│                    │       ↓           │    ListAllModelsAsync()
-│                    │  Queue<float[]>   │    AskAsync()
-│                    │       ↓           │              │
-│                    │  Whisper.net      │              │
-│                    │  (selectable      │              │
-│                    │   model size)     │              │
-│                    │       ↓           │              │
-│                    │  Question detect  │──────────────┘
-│                    └───────┬───────────┘        ▲
-│                            │                    │
-│              ┌─────────────┴─────────────┐      │
-│    SubtitleOverlayWindow       AnswerOverlayWindow
-│    (transcript + Ask btn)      (Q&A display)
-│    [resizable, scrollable]     [resizable, scrollable]
+│  [Context for model: _________________]                         │
+│  [☑ Read answers aloud]  [☑ Continuous camera]                  │
+│  (Orchestrates UI, buttons, model selection)                    │
+├──────┬──────────────────┬───────────────────┬──────────────────┤
+│      │                  │                   │                   │
+│ screencapture  LiveTranscriptionService  CameraService    LlmService
+│ (macOS native) ┌───────────────────┐   (ffmpeg video)  (multi-backend)
+│      │         │  ffmpeg (audio)   │        │                │
+│      │         │       ↓           │   frame capture    Ollama (11434)
+│      │         │  VadLoop (VAD)    │   (1/5s JPEG)     LlamaBarn (2276)
+│      │         │  (speech/silence) │        │                │
+│      │         │       ↓           │  AskVisionAsync   ListAllModelsAsync()
+│      │         │  Queue<float[]>   │   (base64 img)    AskAsync()
+│      │         │       ↓           │        │          AskVisionAsync()
+│      │         │  Whisper.net      │        │                │
+│      │         │       ↓           │        │                │
+│      │         │  Question detect  │────────┼────────────────┘
+│      │         └───────┬───────────┘        │          ▲
+│      │                 │                    │          │
+│      │    ┌────────────┴──────────┐         │          │
+│      │  SubtitleOverlay  AnswerOverlay  CameraOverlay  │
+│      │  (transcript)     (Q&A display) (frame+desc)    │
+│      │                                                  │
+│      └─────────────► ScreenshotOverlayWindow ──────────┘
+│                       (preview + AI description)
 └──────────────────────────────────────────────────────────────┘
 
 WhisperModelManager
@@ -93,6 +102,8 @@ WhisperModelManager
 | LLM Backends | Ollama + LlamaBarn (OpenAI-compatible API) | External services |
 | LLM Model | Selectable via UI from all backends | Configurable |
 | Whisper Model | Selectable via UI from installed ggml models | Configurable |
+| Vision Analysis | LLM vision API (base64 image, OpenAI-compatible) | Via Ollama/LlamaBarn |
+| Camera Capture | ffmpeg (avfoundation video) | System-installed |
 | Screenshots | macOS `screencapture` | System utility |
 | Text-to-Speech | macOS `say` | System utility |
 
@@ -111,8 +122,13 @@ Clippy/
 ├── SubtitleOverlayWindow.axaml.cs     # Subtitle overlay logic (drag, resize, ask callback)
 ├── AnswerOverlayWindow.axaml          # Answer overlay UI (resizable, scrollable)
 ├── AnswerOverlayWindow.axaml.cs       # Answer overlay logic (drag, resize)
+├── CameraOverlayWindow.axaml          # Camera overlay UI (preview, description, snap/speak/font buttons)
+├── CameraOverlayWindow.axaml.cs       # Camera overlay logic (drag, resize, snap, speak)
+├── CameraService.cs                   # Camera frame capture and vision analysis service
+├── ScreenshotOverlayWindow.axaml      # Screenshot overlay UI (preview, AI description, speak/font buttons)
+├── ScreenshotOverlayWindow.axaml.cs   # Screenshot overlay logic (drag, resize, speak)
 ├── LiveTranscriptionService.cs        # VAD-based audio capture and transcription engine
-├── OllamaService.cs                   # Multi-backend LLM client (LlmService, LlmModel)
+├── OllamaService.cs                   # Multi-backend LLM client (LlmService, LlmModel, vision API)
 ├── WhisperModelManager.cs             # Whisper model discovery, listing, and download
 ├── Clippy.csproj                      # Project file and NuGet dependencies
 └── README.md
@@ -122,13 +138,17 @@ Clippy/
 
 - **.NET 9.0 SDK** — [Download](https://dotnet.microsoft.com/download/dotnet/9.0)
 - **macOS** — Uses macOS-specific system tools (`screencapture`, `kill`)
-- **ffmpeg** — Required for audio recording
+- **ffmpeg** — Required for audio recording and camera capture
   ```bash
   brew install ffmpeg
   ```
-- **Ollama and/or LlamaBarn** — At least one LLM backend for question-answering
+- **Ollama and/or LlamaBarn** — At least one LLM backend for question-answering and vision analysis
   ```bash
   brew install ollama
+  ```
+- **A vision-capable model** (optional) — Required for screenshot analysis and camera features (e.g. `llava`, `llama3.2-vision`)
+  ```bash
+  ollama pull llava
   ```
 
 ## Setup
@@ -229,8 +249,8 @@ The Whisper model bar shows all known ggml models with their install status:
 - Any `.bin` file dropped into `~/.clippy/models/` is automatically detected.
 - Changing the Whisper model takes effect on the next Listen or Listen+Subtitle session.
 
-### Clip-it (Screenshot)
-Click **Clip-it** to capture the screen. The window hides during capture to stay out of the screenshot. Images are saved to `~/Desktop/Clippy_Screenshots/` with timestamped filenames.
+### Clip-it (Screenshot + Vision Analysis)
+Click **Clip-it** to capture the screen. The window hides during capture to stay out of the screenshot. Images are saved to `~/Desktop/Clippy_Screenshots/` with timestamped filenames. The screenshot is then sent to the selected vision-capable LLM model for AI analysis. A **purple overlay** appears showing a thumbnail preview of the screenshot alongside the AI-generated description. The overlay includes a speaker button to read the description aloud and font size controls (abc--/ABC++).
 
 ### Listen (Record & Transcribe)
 Click **Listen** to start recording from the default microphone. Click again to stop. The recorded audio is transcribed using the selected Whisper model and the transcript is saved to `~/Desktop/Clippy_Transcripts/`.
@@ -241,6 +261,17 @@ Click **Listen+Subtitle** to enable continuous real-time transcription. A subtit
 If a question is detected, it is automatically sent to the selected LLM model and the answer appears in the blue overlay below. If automatic detection missed a question, click the **Ask** button on the subtitle overlay to manually send the current text.
 
 Both overlays can be **dragged** anywhere on screen and **resized** by dragging the grip in the bottom-right corner. Content scrolls when it overflows.
+
+### Camera (Live Vision Analysis)
+Click **Camera** to start live camera analysis using the default video device. Two modes are available, controlled by the **Continuous camera** checkbox in the main window:
+
+- **Continuous mode** (checkbox checked) — ffmpeg captures one frame every 5 seconds from the camera. Each frame is sent to the selected vision LLM model for analysis. A **green overlay** shows the latest frame preview alongside the AI-generated description.
+- **Snap-only mode** (checkbox unchecked) — No automatic capture. Click the **Snap** button on the camera overlay to manually capture and analyze a single frame on demand.
+
+The camera overlay includes a speaker button to read descriptions aloud and font size controls (abc--/ABC++). Click **Stop Camera** or the close button on the overlay to end the session.
+
+### LLM Context
+The **Context for model** text area lets you provide background information that gets sent as a system message with every LLM question. For example, entering "This is a C# programming lecture about async/await" helps the model give more relevant answers during a Listen+Subtitle session.
 
 ### Read Aloud (Text-to-Speech)
 Check the **Read answers aloud** checkbox in the main window to have every LLM answer automatically spoken via the macOS `say` command. You can also click the **speaker button** on the answer overlay to manually re-read the current answer at any time. Starting a new answer automatically stops any in-progress speech.
@@ -291,6 +322,21 @@ The multi-backend LLM client is configured in `OllamaService.cs`:
 | Min speech | 300ms (3 frames) | Minimum speech duration to avoid noise bursts |
 | Max speech | 15 seconds | Safety cap to flush very long utterances |
 
+### Camera Vision
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| Video device | `"0"` | Default macOS camera (avfoundation device index) |
+| Input framerate | 30 fps | Native camera framerate |
+| Capture interval | 5 seconds | One frame extracted every 5 seconds (continuous mode) |
+| JPEG quality | `-q:v 2` | Good quality JPEG compression |
+| Frame cleanup | Keep last 2 | Old frames deleted to prevent temp directory bloat |
+| Poll interval | 1 second | Analysis loop checks for new frames every 1 second |
+| Write settle delay | 200ms | Wait after frame detected before reading to avoid partial writes |
+| Vision prompt (continuous) | `"Describe what you see in this image concisely in 2-3 sentences."` | Prompt for continuous analysis |
+| Vision prompt (snap) | `"Describe what you see in this image in detail."` | Prompt for manual snap |
+| Vision prompt (screenshot) | `"Describe what you see in this screenshot in detail."` | Prompt for Clip-it analysis |
+
 ### Question Detection
 
 Two-tier pattern matching with `HashSet<string>` (O(1) case-insensitive lookups):
@@ -304,7 +350,7 @@ Two-tier pattern matching with `HashSet<string>` (O(1) case-insensitive lookups)
 
 ### MainWindow
 
-The primary UI controller (600x490). Orchestrates all features — model management, screenshot capture, audio recording, live subtitling — and manages the lifecycle of overlay windows and services.
+The primary UI controller (600x590). Orchestrates all features — model management, screenshot capture with vision analysis, audio recording, live subtitling, and camera vision analysis — and manages the lifecycle of overlay windows and services.
 
 **LLM Status Bar:**
 - **Connection indicator** — Green/orange/red dot showing backend connectivity
@@ -317,11 +363,18 @@ The primary UI controller (600x490). Orchestrates all features — model managem
 - **Model dropdown** — ComboBox listing all known Whisper ggml models with install status and size
 - **Download button** — Downloads the selected uninstalled model from HuggingFace with live progress
 
+**Context Input:**
+- **Context for model** — Multi-line text area for providing LLM context (e.g. lecture topic, domain) sent as a system message
+
+**Toggles:**
+- **Read answers aloud** — Checkbox to auto-speak LLM answers via macOS `say`
+- **Continuous camera** — Checkbox to toggle continuous vs. snap-only camera mode
+
 **Buttons:**
-- **Clip-it** — Screenshot capture
+- **Clip-it** — Screenshot capture + vision analysis (requires a vision model selected)
 - **Listen** — Toggle audio recording and transcription (uses selected Whisper model)
 - **Listen+Subtitle** — Toggle live transcription with overlays (uses selected Whisper and LLM models)
-- **Read answers aloud** — Checkbox to auto-speak LLM answers via macOS `say`
+- **Camera** — Toggle live camera vision analysis (uses selected LLM model for vision)
 - **Hide to Menu Bar** — Minimize to system tray
 
 ### WhisperModelManager
@@ -381,7 +434,8 @@ Multi-backend HTTP client for LLM inference. Probes both Ollama and LlamaBarn, a
 
 **Capabilities:**
 - `ListAllModelsAsync()` — Probes all backends, tries `/api/tags` then falls back to `/v1/models`
-- `AskAsync()` — Routes questions to the correct backend URL based on the selected model
+- `AskAsync()` — Routes text questions to the correct backend URL based on the selected model
+- `AskVisionAsync()` — Sends base64-encoded images to the vision API (`/v1/chat/completions` with `image_url` content type)
 - `SelectedModel` — `LlmModel` record containing name, backend label, and base URL
 - Supports request cancellation so new questions cancel pending requests
 
@@ -411,6 +465,52 @@ Borderless, transparent, always-on-top overlay (default 800x140, min 300x80). Di
 - **Resize** — Drag the grip lines in the bottom-right corner
 - **Scrollable** — Content scrolls vertically for long answers
 - **Speaker button** — Reads the current answer aloud using macOS `say`; kills any previous speech before starting
+
+### CameraOverlayWindow
+
+Borderless, transparent, always-on-top overlay (default 800x220, min 400x120). Displays camera frame previews and AI-generated scene descriptions on a semi-transparent dark green background (`#CC1B5E20`).
+
+**Features:**
+- **Drag to move** — Click and drag anywhere on the overlay body
+- **Resize** — Drag the grip lines in the bottom-right corner
+- **Scrollable** — Description text scrolls vertically for long content
+- **Frame preview** — 140x100 thumbnail of the latest captured frame
+- **Snap button** — Captures and analyzes a single frame on demand
+- **Speaker button** — Reads the current description aloud using macOS `say`
+- **Font size controls** — abc-- and ABC++ buttons to decrease/increase description font size (range 10–72pt)
+- **Close button** — Stops camera capture and closes the overlay
+
+### ScreenshotOverlayWindow
+
+Borderless, transparent, always-on-top overlay (default 800x240, min 400x120). Displays a screenshot thumbnail and the AI-generated description on a semi-transparent purple background (`#CC4A148C`).
+
+**Features:**
+- **Drag to move** — Click and drag anywhere on the overlay body
+- **Resize** — Drag the grip lines in the bottom-right corner
+- **Scrollable** — Description text scrolls vertically for long content
+- **Screenshot preview** — 180x120 thumbnail of the captured screenshot
+- **Speaker button** — Reads the description aloud using macOS `say`
+- **Font size controls** — abc-- and ABC++ buttons to decrease/increase description font size (range 10–72pt)
+- **Close button** — Stops speech and closes the overlay
+
+### CameraService
+
+Manages camera frame capture and vision analysis. Located in `CameraService.cs`.
+
+**Capabilities:**
+- `Start(continuous)` — Starts in continuous mode (ffmpeg captures frames every N seconds) or snap-only mode
+- `SnapAsync()` — Captures a single frame from the default camera and sends it to the vision LLM
+- `StopAsync()` — Stops ffmpeg and the analysis loop, cleans up temp files
+
+**Continuous mode:**
+- ffmpeg captures one JPEG frame every 5 seconds from device `"0"` (default camera)
+- Frames saved to a temp directory as `frame_NNNN.jpg`
+- Analysis loop polls for new frames every second, sends each to `AskVisionAsync()`
+- Old frames are cleaned up automatically (only last 2 kept)
+
+**Snap-only mode:**
+- No ffmpeg process is started
+- User clicks Snap to trigger a one-shot `ffmpeg -frames:v 1` capture and analysis
 
 ### App
 
@@ -495,7 +595,7 @@ User selects models from dropdowns
 Listen/Listen+Subtitle uses selected Whisper + LLM models
 ```
 
-### Screenshot Pipeline
+### Screenshot + Vision Pipeline
 
 ```
 Clip-it button click
@@ -510,7 +610,65 @@ macOS screencapture -x (silent capture)
 Save to ~/Desktop/Clippy_Screenshots/clip_YYYYMMDD_HHmmss.png
     │
     ▼
-MainWindow shows, status updated
+MainWindow shows
+    │
+    ▼
+ScreenshotOverlayWindow opens (purple overlay with preview thumbnail)
+    │
+    ▼
+Image bytes → base64 encode → LlmService.AskVisionAsync()
+    │
+    ├── POST /v1/chat/completions with image_url content
+    │
+    ▼
+AI description displayed in overlay
+```
+
+### Camera Vision Pipeline
+
+```
+Camera button click
+    │
+    ├── Continuous mode ─────────────────────────────────────
+    │   │
+    │   ▼
+    │   ffmpeg -f avfoundation -framerate 30 -i "0" -vf fps=1/5
+    │   │
+    │   ▼
+    │   frame_NNNN.jpg saved to temp dir every 5 seconds
+    │   │
+    │   ▼
+    │   AnalysisLoop detects new frame (polls every 1s)
+    │   │
+    │   ├── Update CameraOverlayWindow preview
+    │   │
+    │   ▼
+    │   LlmService.AskVisionAsync(imageBytes, prompt)
+    │   │
+    │   ▼
+    │   AI description displayed in green overlay
+    │   │
+    │   ▼
+    │   Clean up old frames (keep last 2)
+    │   │
+    │   └── Loop
+    │
+    ├── Snap-only mode ──────────────────────────────────────
+    │   │
+    │   ▼
+    │   User clicks Snap button
+    │   │
+    │   ▼
+    │   ffmpeg -frames:v 1 (single frame capture)
+    │   │
+    │   ▼
+    │   LlmService.AskVisionAsync(imageBytes, prompt)
+    │   │
+    │   ▼
+    │   Preview + description shown in overlay
+    │
+    ▼
+Stop Camera → kill ffmpeg, clean up temp dir
 ```
 
 ## Technical Deep Dive
@@ -598,7 +756,7 @@ Step 5 — No match:
     return FALSE
 ```
 
-### LLM Request Lifecycle
+### LLM Request Lifecycle (Text)
 
 ```
 1. Cancel any in-flight request:
@@ -621,6 +779,30 @@ Step 5 — No match:
 6. Caller updates AnswerOverlayWindow via Dispatcher.UIThread
 ```
 
+### LLM Vision Request Lifecycle (Image)
+
+```
+1. Cancel any in-flight request (same as text)
+2. Encode image bytes to base64 string
+3. Build multimodal request payload:
+       {
+         "model": selectedModel.Name,
+         "messages": [
+           { "role": "user", "content": [
+               { "type": "text", "text": prompt },
+               { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,{base64}" } }
+           ] }
+         ]
+       }
+4. POST to {selectedModel.BaseUrl}/v1/chat/completions
+       - Content-Type: application/json
+       - Timeout: 120 seconds
+5. Parse JSON response:
+       Extract choices[0].message.content
+6. Return description string to caller
+7. Caller updates CameraOverlayWindow or ScreenshotOverlayWindow
+```
+
 ### Concurrency Model
 
 Clippy uses a multi-threaded architecture with explicit synchronization:
@@ -630,7 +812,8 @@ Clippy uses a multi-threaded architecture with explicit synchronization:
 | **UI Thread** | Avalonia dispatcher, all UI updates | `Dispatcher.UIThread.InvokeAsync()` |
 | **VadLoop Thread** | Reads ffmpeg stdout, runs VAD, enqueues speech | `lock(_queueLock)` on shared `Queue<float[]>` |
 | **TranscribeLoop Thread** | Dequeues speech, runs Whisper, detects questions | `lock(_queueLock)` + `AutoResetEvent` signaling |
-| **Task Pool** | LLM requests (`AskAsync`), model downloads | `CancellationTokenSource` for request cancellation |
+| **Camera AnalysisLoop Task** | Polls for new camera frames, sends to vision LLM | `CancellationTokenSource` for loop cancellation |
+| **Task Pool** | LLM requests (`AskAsync`, `AskVisionAsync`), model downloads | `CancellationTokenSource` for request cancellation |
 
 **Key synchronization primitives:**
 - `lock(_queueLock)` — Protects `Queue<float[]>` between VadLoop (producer) and TranscribeLoop (consumer)
@@ -663,6 +846,27 @@ ffmpeg -f avfoundation -i ":default" -ar 16000 -ac 1 {outputPath}.wav
 
 Records to a WAV file. On stop, the ffmpeg process is killed and the WAV is passed to Whisper for batch transcription.
 
+**Camera continuous capture:**
+```bash
+ffmpeg -f avfoundation -framerate 30 -i "0" -vf fps=1/5 -q:v 2 {tempDir}/frame_%04d.jpg
+```
+
+| Flag | Purpose |
+|------|---------|
+| `-f avfoundation` | macOS audio/video capture framework |
+| `-framerate 30` | Input framerate from camera |
+| `-i "0"` | Default video device (device index 0) |
+| `-vf fps=1/5` | Output one frame every 5 seconds |
+| `-q:v 2` | Good JPEG quality |
+| `frame_%04d.jpg` | Sequential frame files (frame_0001.jpg, etc.) |
+
+**Camera single snap:**
+```bash
+ffmpeg -f avfoundation -framerate 30 -i "0" -frames:v 1 -q:v 2 -y {snapPath}
+```
+
+Captures exactly one frame from the camera for on-demand analysis.
+
 ### Error Handling & Reliability
 
 | Scenario | Handling |
@@ -676,6 +880,9 @@ Records to a WAV file. On stop, the ffmpeg process is killed and the WAV is pass
 | Long utterance (>15s) | Safety cap forces flush to prevent unbounded memory growth |
 | Transcription backpressure | Queue drain merges all pending segments into one Whisper call |
 | Concurrent questions | Previous in-flight LLM request cancelled via CancellationToken |
+| Camera ffmpeg fails | Status shows error; camera overlay not opened |
+| Vision model not available | AskVisionAsync returns empty; overlay shows "(No description returned)" |
+| Camera frame incomplete | Frames < 100 bytes or still being written are skipped |
 | UI updates from background | All UI mutations dispatched to Avalonia UI thread |
 
 ### Known Limitations
@@ -688,6 +895,8 @@ Records to a WAV file. On stop, the ffmpeg process is killed and the WAV is pass
 - **Memory usage** — Large Whisper models (Medium: 1.5 GB, Large: 2.9 GB) require significant RAM
 - **No GPU acceleration** — Whisper.net runs CPU-only inference; large models may be slow on older hardware
 - **Question detection heuristics** — Pattern-based detection may miss complex questions or trigger on non-questions; the manual Ask button compensates for this
+- **Vision model required for Clip-it and Camera** — These features require a vision-capable model (e.g. `llava`); non-vision models will return errors or empty descriptions
+- **Single camera** — Always uses device `"0"` (default video device); no camera selection UI
 
 ## Performance Optimizations
 
@@ -706,6 +915,9 @@ The live transcription pipeline is tuned for low-latency real-time use:
 | **100ms poll interval** | Fast chunk pickup between transcription cycles |
 | **HashSet question lookup** | O(1) case-insensitive word matching with two-tier detection |
 | **Persistent inference client** | Reuses a single `HttpClient` for all LLM requests instead of creating one per call |
+| **Camera frame cleanup** | Only keeps last 2 frames on disk to prevent temp directory bloat |
+| **Camera frame polling** | 1-second poll interval with 200ms write-settle delay to avoid reading incomplete frames |
+| **Vision request cancellation** | New vision requests cancel any in-flight previous request via linked CancellationToken |
 
 ## Dependencies
 
@@ -723,7 +935,7 @@ The live transcription pipeline is tuned for low-latency real-time use:
 
 | Dependency | Purpose | Install |
 |------------|---------|---------|
-| ffmpeg | Audio recording and format conversion | `brew install ffmpeg` |
+| ffmpeg | Audio recording, format conversion, and camera frame capture | `brew install ffmpeg` |
 | Ollama | Local LLM inference server (port 11434) | `brew install ollama` |
 | LlamaBarn | Alternative LLM inference server (port 2276) | See LlamaBarn docs |
 | screencapture | macOS native screenshot utility | Pre-installed on macOS |

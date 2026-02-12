@@ -167,6 +167,71 @@ public class LlmService : IDisposable
         return "";
     }
 
+    public async Task<string> AskVisionAsync(byte[] imageBytes, string prompt = "Describe what you see in this image concisely.", CancellationToken ct = default)
+    {
+        if (SelectedModel == null)
+            return "No model selected.";
+
+        var oldCts = _currentRequest;
+        _currentRequest = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var token = _currentRequest.Token;
+
+        if (oldCts != null)
+        {
+            oldCts.Cancel();
+            oldCts.Dispose();
+        }
+
+        var base64Image = Convert.ToBase64String(imageBytes);
+
+        var messages = new List<object>
+        {
+            new
+            {
+                role = "user",
+                content = new object[]
+                {
+                    new { type = "text", text = prompt },
+                    new
+                    {
+                        type = "image_url",
+                        image_url = new { url = $"data:image/jpeg;base64,{base64Image}" }
+                    }
+                }
+            }
+        };
+
+        var requestBody = new
+        {
+            model = SelectedModel.Name,
+            messages,
+            stream = false
+        };
+
+        var json = JsonSerializer.Serialize(requestBody);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        var response = await _inferenceClient.PostAsync(
+            $"{SelectedModel.BaseUrl}/v1/chat/completions", content, token);
+        response.EnsureSuccessStatusCode();
+
+        var responseJson = await response.Content.ReadAsStringAsync(token);
+        using var doc = JsonDocument.Parse(responseJson);
+
+        if (doc.RootElement.TryGetProperty("choices", out var choices)
+            && choices.GetArrayLength() > 0)
+        {
+            var firstChoice = choices[0];
+            if (firstChoice.TryGetProperty("message", out var message)
+                && message.TryGetProperty("content", out var contentText))
+            {
+                return contentText.GetString()?.Trim() ?? "";
+            }
+        }
+
+        return "";
+    }
+
     public void Dispose()
     {
         _currentRequest?.Cancel();

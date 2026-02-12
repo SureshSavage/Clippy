@@ -1,0 +1,147 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Clippy.CameraOverlayWindow"
+        Title="Camera Vision"
+        Width="800" Height="220"
+        MinWidth="400" MinHeight="120"
+        Topmost="True"
+        SystemDecorations="None"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent"
+        CanResize="True"
+        ShowInTaskbar="False"
+        WindowStartupLocation="Manual">
+
+    <Border Background="#CC1B5E20"
+            CornerRadius="12"
+            Padding="24,12"
+            Margin="8">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <!-- Top bar: model label + close button -->
+            <TextBlock x:Name="ModelLabel"
+                       Grid.Row="0"
+                       Text=""
+                       FontSize="10"
+                       Foreground="#80FFFFFF"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Center"
+                       Margin="0,-2,0,2" />
+
+            <!-- Close button -->
+            <Button Grid.Row="0"
+                    Content="&#x2715;"
+                    HorizontalAlignment="Right"
+                    Padding="6,2"
+                    FontSize="13"
+                    FontWeight="Bold"
+                    Foreground="#AAE0E0E0"
+                    Background="Transparent"
+                    CornerRadius="4"
+                    Cursor="Hand"
+                    Margin="0,-4,-8,0"
+                    ToolTip.Tip="Close overlay"
+                    Click="OnCloseClicked" />
+
+            <!-- Image preview + description side by side -->
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
+                <!-- Frame preview -->
+                <Border Grid.Column="0"
+                        Background="#40000000"
+                        CornerRadius="8"
+                        Margin="0,4,12,4"
+                        MinWidth="140" MinHeight="100"
+                        VerticalAlignment="Center">
+                    <Image x:Name="PreviewImage"
+                           Width="140" Height="100"
+                           Stretch="Uniform" />
+                </Border>
+
+                <!-- Description text -->
+                <ScrollViewer Grid.Column="1"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Margin="0,0,16,0">
+                    <TextBlock x:Name="DescriptionText"
+                               Text="Camera ready. Waiting for frames..."
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="#E0E0E0"
+                               TextWrapping="Wrap"
+                               TextAlignment="Left"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Left" />
+                </ScrollViewer>
+            </Grid>
+
+            <!-- Button row -->
+            <StackPanel Grid.Row="2"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,6,0,0"
+                        Spacing="6">
+                <Button x:Name="SnapButton"
+                        Content="Snap"
+                        Padding="10,4"
+                        FontSize="11"
+                        FontWeight="SemiBold"
+                        Foreground="#E0E0E0"
+                        Background="#55FFFFFF"
+                        CornerRadius="6"
+                        Cursor="Hand"
+                        ToolTip.Tip="Capture and analyze a single frame"
+                        Click="OnSnapClicked" />
+                <Button x:Name="SpeakButton"
+                        Content="&#x1F50A;"
+                        Padding="10,4"
+                        FontSize="11"
+                        FontWeight="SemiBold"
+                        Foreground="#E0E0E0"
+                        Background="#55FFFFFF"
+                        CornerRadius="6"
+                        Cursor="Hand"
+                        ToolTip.Tip="Read aloud"
+                        Click="OnSpeakClicked" />
+                <Button Content="abc--"
+                        Padding="10,4"
+                        FontSize="11"
+                        FontWeight="SemiBold"
+                        Foreground="#E0E0E0"
+                        Background="#55FFFFFF"
+                        CornerRadius="6"
+                        Cursor="Hand"
+                        ToolTip.Tip="Decrease font size"
+                        Click="OnFontDecreaseClicked" />
+                <Button Content="ABC++"
+                        Padding="10,4"
+                        FontSize="11"
+                        FontWeight="SemiBold"
+                        Foreground="#E0E0E0"
+                        Background="#55FFFFFF"
+                        CornerRadius="6"
+                        Cursor="Hand"
+                        ToolTip.Tip="Increase font size"
+                        Click="OnFontIncreaseClicked" />
+            </StackPanel>
+
+            <!-- Resize grip -->
+            <Border x:Name="ResizeGrip"
+                    Grid.Row="2"
+                    Width="18" Height="18"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Cursor="BottomRightCorner"
+                    Background="Transparent"
+                    Margin="0,0,-6,-4"
+                    ToolTip.Tip="Drag to resize">
+                <Canvas Width="14" Height="14">
+                    <Line StartPoint="10,0" EndPoint="0,10"
+                          Stroke="#60E0E0E0" StrokeThickness="1.5" />
+                    <Line StartPoint="14,0" EndPoint="0,14"
+                          Stroke="#60E0E0E0" StrokeThickness="1.5" />
+                    <Line StartPoint="14,4" EndPoint="4,14"
+                          Stroke="#60E0E0E0" StrokeThickness="1.5" />
+                </Canvas>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

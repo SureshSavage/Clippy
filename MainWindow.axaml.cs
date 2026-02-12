@@ -33,6 +33,11 @@ public partial class MainWindow : Window
     private LlmService? _llmService;
     private bool _isSubtitling;
 
+    private CameraOverlayWindow? _cameraOverlay;
+    private CameraService? _cameraService;
+    private LlmService? _cameraLlmService;
+    private bool _isCameraActive;
+
     private readonly LlmService _llmManager = new();
     private List<LlmModel> _availableModels = new();
 
@@ -201,6 +206,13 @@ public partial class MainWindow : Window
 
     private async void OnClipItClicked(object? sender, RoutedEventArgs e)
     {
+        var selected = GetSelectedModel();
+        if (selected == null)
+        {
+            SetStatus("No model selected. Please select a vision model first.");
+            return;
+        }
+
         Hide();
         await Task.Delay(300);
 
@@ -221,6 +233,52 @@ public partial class MainWindow : Window
 
         Show();
         Activate();
+
+        if (!File.Exists(filePath))
+        {
+            SetStatus("Screenshot failed.");
+            return;
+        }
+
+        var imageBytes = await File.ReadAllBytesAsync(filePath);
+        if (imageBytes.Length < 100)
+        {
+            SetStatus("Screenshot too small.");
+            return;
+        }
+
+        // Show overlay with preview immediately
+        var overlay = new ScreenshotOverlayWindow();
+        overlay.SetModelLabel(selected.DisplayName);
+        overlay.SetPreview(imageBytes);
+        overlay.Show();
+        overlay.PositionAtCenter();
+
+        SetStatus("Analyzing screenshot...");
+
+        // Send to vision model in background
+        _ = Task.Run(async () =>
+        {
+            using var llm = new LlmService { SelectedModel = selected };
+            try
+            {
+                var description = await llm.AskVisionAsync(
+                    imageBytes,
+                    "Describe what you see in this screenshot in detail.");
+
+                overlay.UpdateDescription(
+                    string.IsNullOrWhiteSpace(description)
+                        ? "(No description returned)"
+                        : description);
+
+                Dispatcher.UIThread.Post(() => SetStatus("Screenshot analyzed."));
+            }
+            catch (Exception ex)
+            {
+                overlay.UpdateDescription($"Error: {ex.Message}");
+                Dispatcher.UIThread.Post(() => SetStatus($"Analysis error: {ex.Message}"));
+            }
+        });
     }
 
     private async void OnListenClicked(object? sender, RoutedEventArgs e)
@@ -491,6 +549,89 @@ public partial class MainWindow : Window
                 _answerOverlay?.UpdateAnswer($"Q: {question}\nError: {ex.Message}");
             }
         });
+    }
+
+    private async void OnCameraClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_isCameraActive)
+        {
+            await StopCamera();
+        }
+        else
+        {
+            StartCamera();
+        }
+    }
+
+    private void StartCamera()
+    {
+        var selected = GetSelectedModel();
+        if (selected == null)
+        {
+            SetStatus("No LLM model selected. Please select a vision model from the dropdown first.");
+            return;
+        }
+
+        _cameraLlmService = new LlmService { SelectedModel = selected };
+
+        _cameraOverlay = new CameraOverlayWindow();
+        _cameraOverlay.OnCloseRequested = () => _ = StopCamera();
+        _cameraOverlay.SetModelLabel(selected.DisplayName);
+        _cameraOverlay.Show();
+        _cameraOverlay.PositionAtCenter();
+
+        _cameraService = new CameraService(
+            _cameraLlmService,
+            description => _cameraOverlay.UpdateDescription(description),
+            onFrameCaptured: imageBytes => _cameraOverlay.UpdatePreview(imageBytes),
+            intervalSeconds: 5
+        );
+
+        _cameraOverlay.OnSnapRequested = () => _cameraService.SnapAsync();
+
+        var continuous = ContinuousCameraCheckBox.IsChecked == true;
+
+        try
+        {
+            _cameraService.Start(continuous);
+            _isCameraActive = true;
+            CameraButton.Content = "Stop Camera";
+            SetStatus(continuous ? "Camera analysis active (continuous)..." : "Camera ready (snap-only mode).");
+        }
+        catch (Exception ex)
+        {
+            _cameraOverlay.Close();
+            _cameraOverlay = null;
+            _cameraService?.Dispose();
+            _cameraService = null;
+            _cameraLlmService?.Dispose();
+            _cameraLlmService = null;
+            SetStatus($"Failed to start camera: {ex.Message}");
+        }
+    }
+
+    private async Task StopCamera()
+    {
+        CameraButton.IsEnabled = false;
+
+        if (_cameraService != null)
+        {
+            await _cameraService.StopAsync();
+            _cameraService.Dispose();
+            _cameraService = null;
+        }
+
+        _cameraOverlay?.StopSpeaking();
+        _cameraOverlay?.Close();
+        _cameraOverlay = null;
+
+        _cameraLlmService?.Dispose();
+        _cameraLlmService = null;
+
+        _isCameraActive = false;
+        CameraButton.Content = "Camera";
+        CameraButton.IsEnabled = true;
+        SetStatus("Camera stopped.");
     }
 
     private void SetStatus(string message)
